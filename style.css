@@ -2,17 +2,40 @@
    Allgemeine Stile        Update Ben v.12 (Solid Header Color + Hover)
    ========================================================================== */
 
+/* Stelle sicher, dass html und body die volle Breite nutzen und keine unerwarteten Ränder haben */
+html, body {
+    width: 100%;
+    min-width: 100%; /* Verhindert, dass sie kleiner werden */
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden; /* Verhindert horizontalen Scrollbalken, FALLS etwas doch zu breit wird */
+    box-sizing: border-box; /* Stellt sicher, dass Padding/Border nicht zur Gesamtbreite addiert wird */
+}
+
 body {
     font-family: 'Lato', sans-serif;
     background-color: #f4f4f4;
     color: #333;
-    margin: 0;
-    padding: 0;
+    /* margin: 0; -> Bereits oben gesetzt */
+    /* padding: 0; -> Bereits oben gesetzt */
     display: flex;
     flex-direction: column;
     align-items: center;
     min-height: 100vh;
 }
+
+/* Erzwinge, dass der .nav-wrapper und .header-bg die volle Breite einnehmen */
+.nav-wrapper,
+.header-bg {
+    width: 100% !important; /* !important als Notlösung, um andere Regeln zu überschreiben */
+    min-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important; /* Nur wenn kein internes Padding gewünscht ist */
+    padding-right: 0 !important; /* Nur wenn kein internes Padding gewünscht ist */
+    box-sizing: border-box !important; /* Wichtig, wenn Padding/Border vorhanden ist */
+}
+
 
 /* ==========================================================================
    Header-Bereich (Einfarbig mit Hover-Effekt)
@@ -22,14 +45,14 @@ body {
     /* background: linear-gradient(to bottom, #6495ED, #4682B4); */ /* Vorheriger Verlauf */
     background-color: #3498db;    /* NEU: Klares, mittleres Blau */
     color: white;                 /* Stellt sicher, dass H1 weiß bleibt */
-    padding: 25px 0;
+    padding: 25px 0; /* Behalte vertikales Padding, horizontales ist oben auf 0 gesetzt */
     text-align: center;
     margin-bottom: 30px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-    width: 99.8%;
+    /* width: 99.8%; -> Wird durch obige Regel zu 100% !important */
     position: relative;
     transition: background-color 0.3s ease; /* Übergang für Hover */
-	border:2px solid gold;
+	border:2px solid gold; /* Beachte: Border addiert zur Breite, wenn box-sizing nicht border-box ist */
 }
 
 /* Hover-Effekt für den Header */
@@ -51,11 +74,11 @@ img { /* Oder eine spezifischere Klasse für deine Bilder */
   margin-left: auto;   /* Setzt den linken Rand auf automatisch */
   margin-right: auto;  /* Setzt den rechten Rand auf automatisch */
   /* Optional: Eine maximale Breite, damit das Bild auf großen Bildschirmen nicht zu riesig wird */
-  /* max-width: 100%; */ 
+  /* max-width: 100%; */
   border: solid 1px black;
   margin-bottom: 1rem;
   margin-top: 1rem;
-    box-shadow: 0 0 1em rgba(0, 0, 0, 0.4); 
+    box-shadow: 0 0 1em rgba(0, 0, 0, 0.4);
 }
 
 /* ==========================================================================
@@ -73,7 +96,7 @@ img { /* Oder eine spezifischere Klasse für deine Bilder */
 .level-container h2 {
     font-size: 24px;
     margin-bottom: 10px;
-    color: orange; /* Helles Grün */
+    color: lime; /* Helles Grün */
     text-align: center;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
 }
@@ -95,9 +118,9 @@ img { /* Oder eine spezifischere Klasse für deine Bilder */
 }
 
 /* Farben der Segmente für Easy Level (Lime) */
-.segment-1 { background-color: orange; transform: rotate(0deg); }
-.segment-2 { background-color: orange; transform: rotate(120deg); }
-.segment-3 { background-color: orange; transform: rotate(240deg); }
+.segment-1 { background-color: lime; transform: rotate(0deg); }
+.segment-2 { background-color: lime; transform: rotate(120deg); }
+.segment-3 { background-color: lime; transform: rotate(240deg); }
 
 /* Innerer Kreis (passend zur NEUEN Header-Farbe) */
 .circle .inner {
@@ -126,9 +149,13 @@ img { /* Oder eine spezifischere Klasse für deine Bilder */
    ========================================================================== */
 
 .container {
-    width: 80%;
+    width: 80%; /* Behalte dies für den Inhaltscontainer, wenn gewünscht */
+    /* Oder, wenn der Container auch 100% sein soll auf Tablets:
+       width: 100%;
+       box-sizing: border-box;
+    */
     max-width: 1200px;
-    margin: 0 auto;
+    margin: 0 auto; /* Zentriert den Container */
     padding: 20px;
     background-color: #ffffff;
     box-shadow: 0 0 15px rgba(0,0,0,0.1);
@@ -136,6 +163,22 @@ img { /* Oder eine spezifischere Klasse für deine Bilder */
     flex: 1;
     margin-bottom: 30px;
 }
+
+/* Optional: Media Query, um den .container auf Tablets breiter zu machen */
+@media (max-width: 1024px) { /* Beispiel-Breakpoint für Tablets */
+    .container {
+        width: 95%; /* Oder 100% wenn es komplett voll sein soll */
+    }
+}
+
+@media (max-width: 767px) { /* Beispiel-Breakpoint für Mobiltelefone */
+    .container {
+        width: 100%;
+        padding: 10px; /* Eventuell Padding anpassen */
+        border-radius: 0;
+    }
+}
+
 
 /* ==========================================================================
    Tool Grid
@@ -308,13 +351,22 @@ section > h2 {
 /* ==========================================================================
    Footer Style (Lebendiger, Strukturierter mit Hover)
    ========================================================================== */
-
+/* Erzwinge, dass der Footer die volle Breite einnimmt */
 .footer {
-    width: 100%;
-    box-sizing: border-box;
+    width: 100% !important;
+    min-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important; /* Nur wenn kein internes Padding gewünscht ist */
+    padding-right: 0 !important; /* Nur wenn kein internes Padding gewünscht ist */
+    box-sizing: border-box !important;
+
+    /* Bestehende Footer-Stile */
+    /* width: 100%; -> Wird durch obige Regel überschrieben */
+    /* box-sizing: border-box; -> Bereits oben gesetzt */
     background: linear-gradient(to bottom, #e4eefc, #f8faff);
     color: #33475b;
-    padding: 25px 15px;
+    padding: 25px 15px; /* Behalte vertikales Padding, horizontales ist oben auf 0 gesetzt */
     text-align: center;
     margin-top: 40px;
     position: relative;
@@ -402,7 +454,7 @@ section > h2 {
 }
 
 .flag-value {
-    display: inline-block; 
+    display: inline-block;
 }
 
 .flag-value .password {
